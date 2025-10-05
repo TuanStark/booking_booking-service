@@ -2,16 +2,16 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
-import { KafkaService } from '../../kafka/kafka.service';
 import { BookingStatus } from '@prisma/client';
 import { FindAllDto } from 'src/common/global/find-all.dto';
+import { KafkaProducerService } from '../kafka/kafka.producer.service';
 
 @Injectable()
 export class BookingService {
   constructor(
     private prisma: PrismaService,
-    private kafkaService: KafkaService,
-  ) {}
+    private kafkaService: KafkaProducerService,
+  ) { }
 
   async create(dto: CreateBookingDto) {
     const booking = await this.prisma.booking.create({
@@ -31,7 +31,7 @@ export class BookingService {
       include: { details: true },
     });
 
-    await this.kafkaService.publish('booking-created', {
+    await this.kafkaService.emitBookingCreatedEvent({
       bookingId: booking.id,
       userId: booking.userId,
       status: booking.status,
@@ -84,6 +84,9 @@ export class BookingService {
         orderBy: orderBy,
         skip,
         take,
+        include: { 
+          details: true
+        },
       }),
       this.prisma.booking.count({
         where: where,
@@ -111,9 +114,11 @@ export class BookingService {
   }
 
   async update(id: string, dto: UpdateBookingDto) {
+    console.log('Update booking request received:', dto);
     const booking = await this.prisma.booking.update({
       where: { id },
       data: {
+        status: dto.status,
         details: {
           update: dto.details?.map((d) => ({
             where: { id: d.roomId },
@@ -127,9 +132,10 @@ export class BookingService {
       include: { details: true },
     });
 
-    await this.kafkaService.publish('booking-updated', {
+    await this.kafkaService.emitBookingCreatedEvent({
       bookingId: booking.id,
       status: booking.status,
+      details: booking.details.map((d) => d.roomId),
     });
 
     return booking;
@@ -142,12 +148,35 @@ export class BookingService {
       include: { details: true },
     });
 
-    await this.kafkaService.publish('booking-canceled', {
+    await this.kafkaService.emitBookingCanceledEvent({
       bookingId: booking.id,
       userId: booking.userId,
       details: booking.details.map((d) => d.roomId),
     });
 
+    return booking;
+  }
+
+  async getBookingByUserId(userId: string) {
+    const booking = await this.prisma.booking.findMany({
+      where: { userId },
+      include: { details: true },
+    });
+    return booking;
+  }
+
+  async getBookingByRoomId(roomId: string) {
+    const booking = await this.prisma.booking.findMany({
+      where: { details: { some: { roomId } } },
+      include: { details: true },
+    });
+    return booking;
+  }
+
+  async delete(id: string) {
+    const booking = await this.prisma.booking.delete({
+      where: { id },
+    });
     return booking;
   }
 }

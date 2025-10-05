@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import { BookingService } from './bookings.service';
-import { BookingsController } from './bookings.controller';
-import { PrismaService } from 'src/prisma/prisma.service';
-import { KafkaService } from 'src/kafka/kafka.service';
+import { BookingController } from './bookings.controller';
+import { KafkaModule } from '../kafka/kafka.module';
 
 @Module({
-  controllers: [BookingsController],
-  providers: [BookingService, KafkaService, PrismaService],
+  imports: [KafkaModule],
+  controllers: [BookingController],
+  providers: [BookingService],
 })
-export class BookingsModule {}
+export class BookingModule {}

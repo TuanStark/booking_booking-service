@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
-import { BookingsModule } from './modules/bookings/bookings.module';
+import { BookingModule } from './modules/bookings/bookings.module';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './prisma/prisma.module';
-import { KafkaService } from './kafka/kafka.service';
 import { PrismaService } from './prisma/prisma.service';
+import { KafkaModule } from './modules/kafka/kafka.module';
 
 @Module({
   imports: [
@@ -11,10 +11,10 @@ import { PrismaService } from './prisma/prisma.service';
       isGlobal: true,
     }),
     PrismaModule,
-    BookingsModule,
+    BookingModule,
+    KafkaModule,
   ],
   controllers: [],
-  providers: [PrismaService, KafkaService],
-  exports: [KafkaService],
+  providers: [PrismaService],
 })
 export class AppModule {}
