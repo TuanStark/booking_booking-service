@@ -1,13 +1,15 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { KafkaProducerService } from './kafka.producer.service';
 import { KafkaConsumerService } from './kafka.consumer.service';
 import { ConfigService } from '@nestjs/config';
 import { BookingsModule } from '../bookings/bookings.module';
+import { PrismaModule } from '../../prisma/prisma.module';
 
 @Module({
   imports: [
-    BookingsModule,
+    forwardRef(() => BookingsModule), // ✅ Fix circular dependency
+    PrismaModule,
     ClientsModule.registerAsync([
       {
         name: 'KAFKA_SERVICE',
