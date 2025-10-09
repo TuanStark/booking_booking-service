@@ -3,9 +3,11 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
 import { KafkaProducerService } from './kafka.producer.service';
 import { KafkaConsumerService } from './kafka.consumer.service';
 import { ConfigService } from '@nestjs/config';
+import { BookingsModule } from '../bookings/bookings.module';
 
 @Module({
   imports: [
+    BookingsModule,
     ClientsModule.registerAsync([
       {
         name: 'KAFKA_SERVICE',

@@ -7,5 +7,6 @@ import { KafkaModule } from '../kafka/kafka.module';
   imports: [KafkaModule],
   controllers: [BookingController],
   providers: [BookingService],
+  exports: [BookingService],
 })
-export class BookingModule {}
+export class BookingsModule {}

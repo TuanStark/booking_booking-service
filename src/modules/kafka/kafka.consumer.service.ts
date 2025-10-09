@@ -2,13 +2,18 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { Kafka, EachMessagePayload } from 'kafkajs';
 import { KafkaTopics } from './kafka-topics.enum';
 import { ConfigService } from '@nestjs/config';
+import { BookingService } from '../bookings/bookings.service';
+import { BookingStatus } from '@prisma/client';
 
 @Injectable()
 export class KafkaConsumerService implements OnModuleInit {
   private readonly kafka: Kafka;
   private readonly consumer;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly bookingService: BookingService,
+  ) {
     this.kafka = new Kafka({
       clientId: this.configService.get<string>('KAFKA_CLIENT_ID') || 'booking-service',
       brokers: this.configService.get<string>('KAFKA_BROKER')?.split(',') || ['localhost:9092'],
@@ -21,31 +26,14 @@ export class KafkaConsumerService implements OnModuleInit {
     try {
       await this.consumer.connect();
 
-      //Sub tất cả các topic mà service này quan tâm
-      // Booking events
-      await this.consumer.subscribe({ topic: KafkaTopics.BOOKING_CREATED });
-      await this.consumer.subscribe({ topic: KafkaTopics.BOOKING_CANCELED });
-      
-      // Payment events
+      //Sub chỉ các topic thực sự cần thiết
+      // Payment events - QUAN TRỌNG NHẤT để update booking status
       await this.consumer.subscribe({ topic: KafkaTopics.PAYMENT_SUCCESS });
       await this.consumer.subscribe({ topic: KafkaTopics.PAYMENT_FAILED });
       await this.consumer.subscribe({ topic: KafkaTopics.PAYMENT_REFUNDED });
       
-      // Room events
-      await this.consumer.subscribe({ topic: KafkaTopics.ROOM_CREATED });
-      await this.consumer.subscribe({ topic: KafkaTopics.ROOM_UPDATED });
+      // Room events - CHỈ CẦN room.deleted để cancel future bookings
       await this.consumer.subscribe({ topic: KafkaTopics.ROOM_DELETED });
-      
-      // User events
-      await this.consumer.subscribe({ topic: KafkaTopics.USER_REGISTERED });
-      await this.consumer.subscribe({ topic: KafkaTopics.USER_UPDATED });
-      
-      // Notification events
-      await this.consumer.subscribe({ topic: KafkaTopics.NOTIFICATION_SENT });
-      
-      // Review events
-      await this.consumer.subscribe({ topic: KafkaTopics.REVIEW_CREATED });
-      await this.consumer.subscribe({ topic: KafkaTopics.REVIEW_UPDATED });
 
       await this.run();
     } catch (error) {
@@ -61,15 +49,7 @@ export class KafkaConsumerService implements OnModuleInit {
 
         const data = JSON.parse(value);
         switch (topic) {
-          // Booking events
-          case KafkaTopics.BOOKING_CREATED:
-            await this.handleBookingCreated(data);
-            break;
-          case KafkaTopics.BOOKING_CANCELED:
-            await this.handleBookingCanceled(data);
-            break;
-            
-          // Payment events
+          // Payment events - Quan trọng nhất
           case KafkaTopics.PAYMENT_SUCCESS:
             await this.handlePaymentSuccess(data);
             break;
@@ -80,36 +60,9 @@ export class KafkaConsumerService implements OnModuleInit {
             await this.handlePaymentRefunded(data);
             break;
             
-          // Room events
-          case KafkaTopics.ROOM_CREATED:
-            await this.handleRoomCreated(data);
-            break;
-          case KafkaTopics.ROOM_UPDATED:
-            await this.handleRoomUpdated(data);
-            break;
+          // Room events - Chỉ cần room.deleted
           case KafkaTopics.ROOM_DELETED:
             await this.handleRoomDeleted(data);
-            break;
-            
-          // User events
-          case KafkaTopics.USER_REGISTERED:
-            await this.handleUserRegistered(data);
-            break;
-          case KafkaTopics.USER_UPDATED:
-            await this.handleUserUpdated(data);
-            break;
-            
-          // Notification events
-          case KafkaTopics.NOTIFICATION_SENT:
-            await this.handleNotificationSent(data);
-            break;
-            
-          // Review events
-          case KafkaTopics.REVIEW_CREATED:
-            await this.handleReviewCreated(data);
-            break;
-          case KafkaTopics.REVIEW_UPDATED:
-            await this.handleReviewUpdated(data);
             break;
             
           default:
@@ -119,76 +72,132 @@ export class KafkaConsumerService implements OnModuleInit {
     });
   }
 
-  //  Logic xử lý khi nhận event
+  // Logic xử lý khi nhận event
   
-  // Booking events
-  private async handleBookingCreated(data: any) {
-    console.log('📩 [Kafka] Booking created event received:', data);
-    //Ví dụ: update phòng -> set room.status = 'OCCUPIED'
-  }
-
-  private async handleBookingCanceled(data: any) {
-    console.log('📩 [Kafka] Booking canceled event received:', data);
-    // Ví dụ: update phòng -> set room.status = 'AVAILABLE'
-  }
-
-  // Payment events
+  // Payment events - Quan trọng nhất
   private async handlePaymentSuccess(data: any) {
     console.log('📩 [Kafka] Payment success event received:', data);
-    // Ví dụ: confirm booking, update booking status to 'CONFIRMED'
+    
+    try {
+      const { bookingId, paymentId, amount, transactionId } = data;
+      
+      if (!bookingId) {
+        console.warn('⚠️ Missing bookingId in payment success event');
+        return;
+      }
+
+      // Update booking status từ PENDING → CONFIRMED
+      const booking = await this.bookingService.findOne(bookingId);
+      if (!booking) {
+        console.warn(`⚠️ Booking ${bookingId} not found`);
+        return;
+      }
+
+      if (booking.status === BookingStatus.PENDING) {
+        await this.bookingService.update(bookingId, { 
+          status: BookingStatus.CONFIRMED 
+        });
+        console.log(`✅ Booking ${bookingId} confirmed after payment success`);
+      } else {
+        console.log(`ℹ️ Booking ${bookingId} already ${booking.status}, skipping`);
+      }
+      
+    } catch (error) {
+      console.error('❌ Error handling payment success event:', error.message);
+    }
   }
 
   private async handlePaymentFailed(data: any) {
     console.log('📩 [Kafka] Payment failed event received:', data);
-    // Ví dụ: cancel booking, update booking status to 'CANCELLED'
+    
+    try {
+      const { bookingId, paymentId, reason } = data;
+      
+      if (!bookingId) {
+        console.warn('⚠️ Missing bookingId in payment failed event');
+        return;
+      }
+
+      // Update booking status từ PENDING → CANCELED
+      const booking = await this.bookingService.findOne(bookingId);
+      if (!booking) {
+        console.warn(`⚠️ Booking ${bookingId} not found`);
+        return;
+      }
+
+      if (booking.status === BookingStatus.PENDING) {
+        await this.bookingService.update(bookingId, { 
+          status: BookingStatus.CANCELED 
+        });
+        console.log(`✅ Booking ${bookingId} canceled after payment failed`);
+      } else {
+        console.log(`ℹ️ Booking ${bookingId} already ${booking.status}, skipping`);
+      }
+      
+    } catch (error) {
+      console.error('❌ Error handling payment failed event:', error.message);
+    }
   }
 
   private async handlePaymentRefunded(data: any) {
     console.log('📩 [Kafka] Payment refunded event received:', data);
-    // Ví dụ: update booking status to 'REFUNDED', release room
+    
+    try {
+      const { bookingId, paymentId, refundAmount, reason } = data;
+      
+      if (!bookingId) {
+        console.warn('⚠️ Missing bookingId in payment refunded event');
+        return;
+      }
+
+      // Update booking status từ CONFIRMED → CANCELED (refunded)
+      const booking = await this.bookingService.findOne(bookingId);
+      if (!booking) {
+        console.warn(`⚠️ Booking ${bookingId} not found`);
+        return;
+      }
+
+      if (booking.status === BookingStatus.CONFIRMED) {
+        await this.bookingService.update(bookingId, { 
+          status: BookingStatus.CANCELED 
+        });
+        console.log(`✅ Booking ${bookingId} canceled after payment refunded`);
+      } else {
+        console.log(`ℹ️ Booking ${bookingId} status is ${booking.status}, cannot refund`);
+      }
+      
+    } catch (error) {
+      console.error('❌ Error handling payment refunded event:', error.message);
+    }
   }
 
-  // Room events
-  private async handleRoomCreated(data: any) {
-    console.log('📩 [Kafka] Room created event received:', data);
-    // Ví dụ: sync room data to local cache
-  }
-
-  private async handleRoomUpdated(data: any) {
-    console.log('📩 [Kafka] Room updated event received:', data);
-    // Ví dụ: update room info in booking records
-  }
-
+  // Room events - Chỉ cần room.deleted
   private async handleRoomDeleted(data: any) {
     console.log('📩 [Kafka] Room deleted event received:', data);
-    // Ví dụ: cancel all future bookings for this room
-  }
+    
+    try {
+      const { roomId, buildingId } = data;
+      
+      if (!roomId) {
+        console.warn('⚠️ Missing roomId in room deleted event');
+        return;
+      }
 
-  // User events
-  private async handleUserRegistered(data: any) {
-    console.log('📩 [Kafka] User registered event received:', data);
-    // Ví dụ: create user profile in booking service
-  }
-
-  private async handleUserUpdated(data: any) {
-    console.log('📩 [Kafka] User updated event received:', data);
-    // Ví dụ: sync user info in booking records
-  }
-
-  // Notification events
-  private async handleNotificationSent(data: any) {
-    console.log('📩 [Kafka] Notification sent event received:', data);
-    // Ví dụ: update notification status in booking
-  }
-
-  // Review events
-  private async handleReviewCreated(data: any) {
-    console.log('📩 [Kafka] Review created event received:', data);
-    // Ví dụ: link review to booking, update booking with review info
-  }
-
-  private async handleReviewUpdated(data: any) {
-    console.log('📩 [Kafka] Review updated event received:', data);
-    // Ví dụ: update review info in booking
+      // Cancel all future bookings for this room
+      const futureBookings = await this.bookingService.getBookingByRoomId(roomId);
+      
+      for (const booking of futureBookings) {
+        // Chỉ cancel bookings trong tương lai
+        if (new Date(booking.startDate) > new Date()) {
+          await this.bookingService.update(booking.id, { 
+            status: BookingStatus.CANCELED 
+          });
+          console.log(`✅ Canceled future booking ${booking.id} for deleted room ${roomId}`);
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ Error handling room deleted event:', error.message);
+    }
   }
 }
