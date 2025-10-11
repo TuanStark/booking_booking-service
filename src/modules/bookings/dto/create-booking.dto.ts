@@ -18,9 +18,6 @@ class BookingDetailItem {
 }
 
 export class CreateBookingDto {
-  @IsUUID()
-  userId: string;
-
   @IsDateString()
   startDate: string;
 

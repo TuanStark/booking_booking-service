@@ -13,10 +13,10 @@ export class BookingService {
     private kafkaService: KafkaProducerService,
   ) { }
 
-  async create(dto: CreateBookingDto) {
+  async create( userId: string, dto: CreateBookingDto,) {
     const booking = await this.prisma.booking.create({
       data: {
-        userId: dto.userId,
+        userId: userId,
         startDate: new Date(dto.startDate),
         endDate: new Date(dto.endDate),
         details: {
