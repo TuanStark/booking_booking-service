@@ -22,7 +22,7 @@ export class BookingService {
     private readonly redisService: RedisService,
     private readonly kafkaProducerService: KafkaProducerService,
     private readonly externalService: ExternalService,
-    ) {}
+  ) {}
 
   async create(userId: string, dto: CreateBookingDto) {
     try {
@@ -60,21 +60,30 @@ export class BookingService {
           time: d.time,
         })),
       };
-      
+
       try {
         await this.rabbitMQService.publishBookingCreated(bookingCreatedEvent);
         this.logger.log(`Published booking.created event: ${booking.id}`);
       } catch (error) {
-        this.logger.warn(`Failed to publish booking.created event: ${error.message}`);
+        this.logger.warn(
+          `Failed to publish booking.created event: ${error.message}`,
+        );
         // Continue execution even if RabbitMQ fails
       }
 
-      await this.kafkaProducerService.emitBookingCreatedEvent(bookingCreatedEvent);
-      this.logger.log(`Published booking.created event to Kafka: ${booking.id}`);
+      await this.kafkaProducerService.emitBookingCreatedEvent(
+        bookingCreatedEvent,
+      );
+      this.logger.log(
+        `Published booking.created event to Kafka: ${booking.id}`,
+      );
 
       return booking;
     } catch (error) {
-      this.logger.error(`Failed to create booking: ${error.message}`, error.stack);
+      this.logger.error(
+        `Failed to create booking: ${error.message}`,
+        error.stack,
+      );
       throw error;
     }
   }
@@ -173,10 +182,11 @@ export class BookingService {
     return bookings.map((booking) => ({
       ...booking,
       user: usersMap.get(booking.userId) || null,
-      details: booking.details?.map((detail: any) => ({
-        ...detail,
-        room: roomsMap.get(detail.roomId) || null,
-      })) || [],
+      details:
+        booking.details?.map((detail: any) => ({
+          ...detail,
+          room: roomsMap.get(detail.roomId) || null,
+        })) || [],
     }));
   }
 
@@ -203,7 +213,10 @@ export class BookingService {
     }
 
     // Enrich với external data
-    const enriched = await this.enrichBookingsWithExternalData([booking], token);
+    const enriched = await this.enrichBookingsWithExternalData(
+      [booking],
+      token,
+    );
     const enrichedBooking = enriched[0];
 
     // Cache booking (không cache external data để tránh stale data)
@@ -250,7 +263,10 @@ export class BookingService {
 
       return booking;
     } catch (error) {
-      this.logger.error(`Failed to update booking ${id}: ${error.message}`, error.stack);
+      this.logger.error(
+        `Failed to update booking ${id}: ${error.message}`,
+        error.stack,
+      );
       throw error;
     }
   }
@@ -258,8 +274,13 @@ export class BookingService {
   async cancel(id: string, status: BookingStatus) {
     try {
       // Validate status - chỉ cho phép CONFIRMED hoặc CANCELED
-      if (status !== BookingStatus.CONFIRMED && status !== BookingStatus.CANCELED) {
-        throw new Error(`Invalid status: ${status}. Only CONFIRMED or CANCELED are allowed.`);
+      if (
+        status !== BookingStatus.CONFIRMED &&
+        status !== BookingStatus.CANCELED
+      ) {
+        throw new Error(
+          `Invalid status: ${status}. Only CONFIRMED or CANCELED are allowed.`,
+        );
       }
 
       const booking = await this.prisma.booking.update({
@@ -284,11 +305,17 @@ export class BookingService {
       try {
         if (status === BookingStatus.CANCELED) {
           // Send RabbitMQ event for booking.canceled
-          await this.rabbitMQService.publishMessage('booking.canceled', bookingStatusEvent);
+          await this.rabbitMQService.publishMessage(
+            'booking.canceled',
+            bookingStatusEvent,
+          );
           this.logger.log(`Published booking.canceled event: ${booking.id}`);
 
           // Send RabbitMQ payment cancel request
-          const totalAmount = booking.details.reduce((sum, detail) => sum + detail.price, 0);
+          const totalAmount = booking.details.reduce(
+            (sum, detail) => sum + detail.price,
+            0,
+          );
           await this.rabbitMQService.publishMessage('payment.cancel', {
             bookingId: booking.id,
             userId: booking.userId,
@@ -299,10 +326,15 @@ export class BookingService {
               cancelledAt: new Date().toISOString(),
             },
           });
-          this.logger.log(`Published payment.cancel event for booking: ${booking.id}`);
+          this.logger.log(
+            `Published payment.cancel event for booking: ${booking.id}`,
+          );
         } else if (status === BookingStatus.CONFIRMED) {
           // Send event for booking confirmed
-          await this.rabbitMQService.publishMessage('booking.confirmed', bookingStatusEvent);
+          await this.rabbitMQService.publishMessage(
+            'booking.confirmed',
+            bookingStatusEvent,
+          );
           this.logger.log(`Published booking.confirmed event: ${booking.id}`);
         }
       } catch (error) {
@@ -314,7 +346,9 @@ export class BookingService {
 
       // Send Kafka event (wrapped in try-catch)
       try {
-        await this.kafkaProducerService.emitBookingCreatedEvent(bookingStatusEvent);
+        await this.kafkaProducerService.emitBookingCreatedEvent(
+          bookingStatusEvent,
+        );
       } catch (error) {
         this.logger.warn(
           `Failed to publish Kafka event for booking ${booking.id}: ${error.message || error}`,
@@ -359,7 +393,10 @@ export class BookingService {
 
       return booking;
     } catch (error) {
-      this.logger.error(`Failed to delete booking ${id}: ${error.message}`, error.stack);
+      this.logger.error(
+        `Failed to delete booking ${id}: ${error.message}`,
+        error.stack,
+      );
       throw error;
     }
   }

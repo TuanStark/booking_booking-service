@@ -1,4 +1,13 @@
-import { IsUUID, IsDateString, IsArray, ValidateNested, IsNumber, IsOptional, IsString, IsEnum } from 'class-validator';
+import {
+  IsUUID,
+  IsDateString,
+  IsArray,
+  ValidateNested,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsEnum,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { BookingStatus } from '@prisma/client';
 
@@ -19,7 +28,6 @@ class BookingDetailItem {
 }
 
 export class CreateBookingDto {
-
   @IsUUID()
   @IsOptional()
   id: string;

@@ -72,19 +72,12 @@ export class ExternalService {
           if (user) {
             const id = idsToFetch[index];
             result.set(id, user);
-            await this.redisService.set(
-              `user:${id}`,
-              user,
-              this.cacheTTL,
-            );
+            await this.redisService.set(`user:${id}`, user, this.cacheTTL);
           }
         }),
       );
     } catch (error) {
-      this.logger.error(
-        `Error fetching users: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Error fetching users: ${error.message}`, error.stack);
     }
 
     return result;
@@ -102,20 +95,17 @@ export class ExternalService {
       const headers: HeadersInit = {
         'Content-Type': 'application/json',
       };
-      
+
       if (token) {
         headers['Authorization'] = token.startsWith('Bearer ')
           ? token
           : `Bearer ${token}`;
       }
 
-      const response = await fetch(
-        `${this.authServiceUrl}/user/${userId}`,
-        {
-          signal: controller.signal,
-          headers,
-        },
-      );
+      const response = await fetch(`${this.authServiceUrl}/user/${userId}`, {
+        signal: controller.signal,
+        headers,
+      });
 
       clearTimeout(timeoutId);
 
@@ -198,19 +188,12 @@ export class ExternalService {
           if (room) {
             const id = idsToFetch[index];
             result.set(id, room);
-            await this.redisService.set(
-              `room:${id}`,
-              room,
-              this.cacheTTL,
-            );
+            await this.redisService.set(`room:${id}`, room, this.cacheTTL);
           }
         }),
       );
     } catch (error) {
-      this.logger.error(
-        `Error fetching rooms: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Error fetching rooms: ${error.message}`, error.stack);
     }
 
     return result;
@@ -228,20 +211,17 @@ export class ExternalService {
       const headers: HeadersInit = {
         'Content-Type': 'application/json',
       };
-      
+
       if (token) {
         headers['Authorization'] = token.startsWith('Bearer ')
           ? token
           : `Bearer ${token}`;
       }
 
-      const response = await fetch(
-        `${this.roomServiceUrl}/rooms/${roomId}`,
-        {
-          signal: controller.signal,
-          headers,
-        },
-      );
+      const response = await fetch(`${this.roomServiceUrl}/rooms/${roomId}`, {
+        signal: controller.signal,
+        headers,
+      });
 
       clearTimeout(timeoutId);
 
@@ -287,4 +267,3 @@ export class ExternalService {
     await this.redisService.del(`room:${roomId}`);
   }
 }
-

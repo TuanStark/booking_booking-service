@@ -15,7 +15,10 @@ export class KafkaProducerService implements OnModuleInit {
       );
       await this.kafkaClient.connect();
     } catch (error) {
-      console.warn('⚠️ Kafka not available, skipping producer setup:', error.message);
+      console.warn(
+        '⚠️ Kafka not available, skipping producer setup:',
+        error.message,
+      );
     }
   }
 

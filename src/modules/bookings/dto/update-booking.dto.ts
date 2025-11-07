@@ -1,6 +1,12 @@
 import { PartialType } from '@nestjs/mapped-types';
 import { CreateBookingDto } from './create-booking.dto';
-import { IsArray, IsEnum, IsNumber, IsUUID, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsEnum,
+  IsNumber,
+  IsUUID,
+  ValidateNested,
+} from 'class-validator';
 import { BookingStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 
