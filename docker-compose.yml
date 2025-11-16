@@ -4,7 +4,7 @@ services:
   booking-service:
     build:
       context: .
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile
     container_name: booking-service-dev
     ports:
       - "3005:3005"
