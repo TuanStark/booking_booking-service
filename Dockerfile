@@ -53,16 +53,15 @@ COPY --from=pruner --chown=nestjs:nodejs /app/package*.json ./
 COPY --from=pruner --chown=nestjs:nodejs /app/dist          ./dist
 COPY --from=pruner --chown=nestjs:nodejs /app/prisma        ./prisma
 COPY --from=pruner --chown=nestjs:nodejs /app/node_modules  ./node_modules
-COPY --from=builder --chown=nestjs:nodejs /app/keys         ./keys
 
 # Chuyển sang user non-root
 USER nestjs
 
 # Environment
 ENV NODE_ENV=production \
-    PORT=3001
+    PORT=3005
 
-EXPOSE 3001
+EXPOSE 3005
 
 # Healthcheck (tùy chọn – yêu cầu có endpoint /health)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s \

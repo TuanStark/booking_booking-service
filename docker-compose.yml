@@ -5,30 +5,31 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: booking-service-dev
+    container_name: booking-service
     ports:
       - "3005:3005"
-    environment:
-      PORT: 3005
-      DATABASE_URL: ${DATABASE_URL}
-      REDIS_HOST: ${REDIS_HOST}
-      REDIS_PORT: ${REDIS_PORT}
-      REDIS_TTL: ${REDIS_TTL}
-      KAFKA_BROKER: ${KAFKA_BROKER}
-      KAFKA_CLIENT_ID: ${KAFKA_CLIENT_ID}
-      KAFKA_GROUP_ID: ${KAFKA_GROUP_ID}
-      RABBITMQ_URL: ${RABBITMQ_URL}
-      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE}
-      NODE_ENV: development
-    volumes:
-      - .:/app
-      - /app/node_modules
-    command: sh -c "npx prisma generate && npm run start:dev"
+    env_file:
+      - .env
+    command: sh -c "npx prisma migrate deploy && node dist/main"
     networks:
       my_custom_network:
         ipv4_address: ${APP_IP}
+    restart: always
+    healthcheck:
+      test: ["CMD", "node", "dist/health.js"]  # hoặc dùng HTTP
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
 
 networks:
   my_custom_network:
     external: true
-
