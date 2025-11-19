@@ -7,6 +7,7 @@ import {
   IsOptional,
   IsString,
   IsEnum,
+  IsIn,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { BookingStatus } from '@prisma/client';
@@ -28,22 +29,21 @@ class BookingDetailItem {
 }
 
 export class CreateBookingDto {
-  @IsUUID()
-  @IsOptional()
-  id: string;
-
-  @IsEnum(BookingStatus)
-  status: BookingStatus;
-
-  @IsUUID()
-  @IsOptional()
-  userId: string;
-
   @IsDateString()
   startDate: string;
 
   @IsDateString()
   endDate: string;
+
+  @IsString()
+  @IsIn(['VIETQR', 'VNPAY'], {
+    message: 'typePayment must be either VIETQR or VNPAY',
+  })
+  typePayment: string;
+
+  @IsString()
+  @IsOptional()
+  note?: string;
 
   @IsArray()
   @ValidateNested({ each: true })

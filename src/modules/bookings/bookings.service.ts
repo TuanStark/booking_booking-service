@@ -2,12 +2,13 @@ import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
-import { BookingStatus } from '@prisma/client';
+import { BookingStatus, PaymentStatus } from '@prisma/client';
 import { FindAllDto } from '../../common/global/find-all.dto';
 import { RabbitMQProducerService } from '../../messaging/rabbitmq/rabbitmq.producer.service';
 import { RedisService } from '../../messaging/redis/redis.service';
 import { KafkaProducerService } from 'src/messaging/kafka/kafka.producer.service';
 import { ExternalService } from '../../common/external/external.service';
+import { ConfigService } from '@nestjs/config';
 // import { BookingCreatedDto } from '../../messaging/rabbitmq/dto/booking-created.dto.service';
 // import { BookingUpdatedDto } from '../../messaging/rabbitmq/dto/booking-updated.dto';
 // import { BookingCanceledDto } from '../../messaging/rabbitmq/dto/booking-canceled.dto';
@@ -15,6 +16,7 @@ import { ExternalService } from '../../common/external/external.service';
 @Injectable()
 export class BookingService {
   private readonly logger = new Logger(BookingService.name);
+  private readonly paymentServiceUrl: string;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -22,10 +24,17 @@ export class BookingService {
     private readonly redisService: RedisService,
     private readonly kafkaProducerService: KafkaProducerService,
     private readonly externalService: ExternalService,
-  ) {}
+    private readonly configService: ConfigService,
+  ) {
+    this.paymentServiceUrl =
+      this.configService.get<string>('PAYMENT_SERVICE_URL') ||
+      'http://localhost:3006';
+  }
 
   async create(userId: string, dto: CreateBookingDto) {
     try {
+      const totalAmount = this.calculateTotalAmount(dto);
+
       const booking = await this.prisma.booking.create({
         data: {
           userId,
@@ -78,13 +87,131 @@ export class BookingService {
         `Published booking.created event to Kafka: ${booking.id}`,
       );
 
-      return booking;
+      let payment: any = null;
+
+      try {
+        payment = await this.createPaymentSession({
+          bookingId: booking.id,
+          userId,
+          amount: totalAmount,
+          method: dto.typePayment,
+        });
+      } catch (paymentError) {
+        await this.safeDeleteBooking(booking.id);
+        throw paymentError;
+      }
+
+      if (payment?.id) {
+        await this.prisma.booking.update({
+          where: { id: booking.id },
+          data: {
+            paymentId: payment.id,
+            paymentStatus: PaymentStatus.PENDING,
+          },
+        });
+
+        booking.paymentId = payment.id;
+        booking.paymentStatus = PaymentStatus.PENDING;
+      }
+
+      return {
+        ...booking,
+        payment,
+      };
     } catch (error) {
       this.logger.error(
         `Failed to create booking: ${error.message}`,
         error.stack,
       );
       throw error;
+    }
+  }
+
+  private calculateTotalAmount(dto: CreateBookingDto): number {
+    if (!dto.details || dto.details.length === 0) {
+      throw new Error('Booking details are required');
+    }
+
+    const total = dto.details.reduce(
+      (sum, detail) => sum + Number(detail.price || 0),
+      0,
+    );
+
+    if (total <= 0) {
+      throw new Error('Total amount must be greater than 0');
+    }
+
+    return total;
+  }
+
+  private normalizePaymentMethod(method?: string): 'VIETQR' | 'VNPAY' {
+    if (!method) {
+      throw new Error('typePayment is required');
+    }
+
+    const normalized = method.trim().toUpperCase();
+    if (normalized !== 'VIETQR' && normalized !== 'VNPAY') {
+      throw new Error('Unsupported payment method');
+    }
+
+    return normalized as 'VIETQR' | 'VNPAY';
+  }
+
+  private async createPaymentSession(payload: {
+    bookingId: string;
+    userId: string;
+    amount: number;
+    method: string;
+  }) {
+    const method = this.normalizePaymentMethod(payload.method);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    try {
+      const response = await fetch(`${this.paymentServiceUrl}/payments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': payload.userId,
+        },
+        body: JSON.stringify({
+          bookingId: payload.bookingId,
+          amount: payload.amount,
+          method,
+        }),
+        signal: controller.signal,
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const message =
+          data?.message || `Payment service error (${response.status})`;
+        throw new Error(message);
+      }
+
+      return data;
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        throw new Error('Payment service request timed out');
+      }
+      throw new Error(error.message || 'Failed to create payment session');
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  private async safeDeleteBooking(id: string) {
+    try {
+      await this.prisma.booking.delete({ where: { id } });
+      this.logger.warn(
+        `Rolled back booking ${id} because payment session creation failed`,
+      );
+    } catch (rollbackError) {
+      this.logger.error(
+        `Failed to rollback booking ${id}: ${rollbackError.message}`,
+        rollbackError.stack,
+      );
     }
   }
 

@@ -32,7 +32,6 @@ export class BookingController {
     // Extract userId from x-user-id header sent by API Gateway
     const userId = req.headers['x-user-id'] as string;
     console.log('Create booking request received:', createBookingDto);
-    console.log('Create booking request received:', req);
     console.log('UserId from header:', userId);
 
     if (!userId) {
@@ -46,7 +45,10 @@ export class BookingController {
       );
       return new ResponseData(booking, HttpStatus.CREATED, HttpMessage.CREATED);
     } catch (error) {
-      throw new BadRequestException(error.message);
+      console.error('Error creating booking:', error);
+      const errorMessage =
+        error?.message || 'Failed to create booking. Please try again.';
+      throw new BadRequestException(errorMessage);
     }
   }
 
