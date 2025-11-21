@@ -39,7 +39,7 @@ export class CreateBookingDto {
   @IsIn(['VIETQR', 'VNPAY'], {
     message: 'typePayment must be either VIETQR or VNPAY',
   })
-  typePayment: string;
+  paymentMethod: string;
 
   @IsString()
   @IsOptional()

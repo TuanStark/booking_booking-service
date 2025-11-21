@@ -27,8 +27,7 @@ export class BookingService {
     private readonly configService: ConfigService,
   ) {
     this.paymentServiceUrl =
-      this.configService.get<string>('PAYMENT_SERVICE_URL') ||
-      'http://localhost:3006';
+      this.configService.get<string>('PAYMENT_SERVICE_URL') || 'http://localhost:3006';
   }
 
   async create(userId: string, dto: CreateBookingDto) {
@@ -94,7 +93,7 @@ export class BookingService {
           bookingId: booking.id,
           userId,
           amount: totalAmount,
-          method: dto.typePayment,
+          paymentMethod: dto.paymentMethod,
         });
       } catch (paymentError) {
         await this.safeDeleteBooking(booking.id);
@@ -161,9 +160,9 @@ export class BookingService {
     bookingId: string;
     userId: string;
     amount: number;
-    method: string;
+    paymentMethod: string;
   }) {
-    const method = this.normalizePaymentMethod(payload.method);
+    const paymentMethod = this.normalizePaymentMethod(payload.paymentMethod);
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
 
@@ -177,7 +176,7 @@ export class BookingService {
         body: JSON.stringify({
           bookingId: payload.bookingId,
           amount: payload.amount,
-          method,
+          paymentMethod,
         }),
         signal: controller.signal,
       });
