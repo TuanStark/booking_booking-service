@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
-import { BookingStatus, PaymentStatus } from '@prisma/client';
+import { BookingStatus, PaymentStatus } from './dto/enum';
 import { FindAllDto } from '../../common/global/find-all.dto';
 import { RabbitMQProducerService } from '../../messaging/rabbitmq/rabbitmq.producer.service';
 import { RedisService } from '../../messaging/redis/redis.service';

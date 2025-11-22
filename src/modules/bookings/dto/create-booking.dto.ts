@@ -6,11 +6,9 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  IsEnum,
   IsIn,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { BookingStatus } from '@prisma/client';
 
 class BookingDetailItem {
   @IsUUID()

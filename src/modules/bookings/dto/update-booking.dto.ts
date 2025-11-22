@@ -7,7 +7,6 @@ import {
   IsUUID,
   ValidateNested,
 } from 'class-validator';
-import { BookingStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 
 class BookingDetailItem {
@@ -23,8 +22,7 @@ class BookingDetailItem {
 }
 
 export class UpdateBookingDto extends PartialType(CreateBookingDto) {
-  @IsEnum(BookingStatus)
-  status?: BookingStatus;
+  status?: string;
 
   @IsArray()
   @ValidateNested({ each: true })

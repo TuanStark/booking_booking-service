@@ -18,7 +18,7 @@ import { UpdateBookingDto } from './dto/update-booking.dto';
 import { HttpMessage, HttpStatus } from 'src/common/global/globalEnum';
 import { ResponseData } from 'src/common/global/globalClass';
 import { FindAllDto } from 'src/common/global/find-all.dto';
-import { BookingStatus } from '@prisma/client';
+import { BookingStatus } from './dto/enum';
 
 @Controller('bookings')
 export class BookingController {
