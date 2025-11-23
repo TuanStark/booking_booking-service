@@ -8,6 +8,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { BookingStatus } from './enum';
 
 class BookingDetailItem {
   @IsUUID()
@@ -22,7 +23,8 @@ class BookingDetailItem {
 }
 
 export class UpdateBookingDto extends PartialType(CreateBookingDto) {
-  status?: string;
+  @IsEnum(BookingStatus)
+  status?: BookingStatus;
 
   @IsArray()
   @ValidateNested({ each: true })
