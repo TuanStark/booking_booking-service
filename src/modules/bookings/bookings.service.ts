@@ -176,7 +176,7 @@ export class BookingService {
         body: JSON.stringify({
           bookingId: payload.bookingId,
           amount: payload.amount,
-          paymentMethod,
+          method: paymentMethod,
         }),
         signal: controller.signal,
       });
@@ -236,11 +236,11 @@ export class BookingService {
     const searchUpCase = search.charAt(0).toUpperCase() + search.slice(1);
     const where = search
       ? {
-          OR: [
-            { userId: { contains: searchUpCase } },
-            { details: { some: { roomId: { contains: searchUpCase } } } },
-          ],
-        }
+        OR: [
+          { userId: { contains: searchUpCase } },
+          { details: { some: { roomId: { contains: searchUpCase } } } },
+        ],
+      }
       : {};
     const orderBy = { [sortBy]: sortOrder };
 
