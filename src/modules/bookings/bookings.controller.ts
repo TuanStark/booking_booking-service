@@ -22,7 +22,7 @@ import { BookingStatus } from './dto/enum';
 
 @Controller('bookings')
 export class BookingController {
-  constructor(private readonly bookingsService: BookingService) {}
+  constructor(private readonly bookingsService: BookingService) { }
 
   @Post()
   async create(
@@ -66,6 +66,20 @@ export class BookingController {
         HttpStatus.SUCCESS,
         HttpMessage.SUCCESS,
       );
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  /**
+   * Get booking statistics for dashboard
+   * GET /bookings/stats
+   */
+  @Get('stats')
+  async getStats(@Query('year') year?: number) {
+    try {
+      const stats = await this.bookingsService.getStats(year);
+      return new ResponseData(stats, HttpStatus.SUCCESS, HttpMessage.SUCCESS);
     } catch (error) {
       throw new BadRequestException(error.message);
     }

@@ -526,4 +526,106 @@ export class BookingService {
       throw error;
     }
   }
+
+  /**
+   * Get booking statistics for dashboard
+   */
+  async getStats(year?: number) {
+    const currentYear = year || new Date().getFullYear();
+
+    const [total, pending, confirmed, cancelled, completed] = await Promise.all(
+      [
+        this.prisma.booking.count(),
+        this.prisma.booking.count({ where: { status: BookingStatus.PENDING } }),
+        this.prisma.booking.count({
+          where: { status: BookingStatus.CONFIRMED },
+        }),
+        this.prisma.booking.count({
+          where: { status: BookingStatus.CANCELED },
+        }),
+        this.prisma.booking.count({
+          where: { status: BookingStatus.COMPLETED },
+        }),
+      ],
+    );
+
+    // Get monthly bookings
+    const monthlyBookings = await this.getMonthlyBookings(currentYear);
+
+    // Calculate growth
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+
+    const [bookingsThisMonth, bookingsLastMonth] = await Promise.all([
+      this.prisma.booking.count({
+        where: { createdAt: { gte: startOfMonth } },
+      }),
+      this.prisma.booking.count({
+        where: {
+          createdAt: { gte: lastMonth, lte: endOfLastMonth },
+        },
+      }),
+    ]);
+
+    const bookingGrowth =
+      bookingsLastMonth > 0
+        ? ((bookingsThisMonth - bookingsLastMonth) / bookingsLastMonth) * 100
+        : bookingsThisMonth > 0
+          ? 100
+          : 0;
+
+    return {
+      totalBookings: total,
+      pendingBookings: pending,
+      confirmedBookings: confirmed,
+      cancelledBookings: cancelled,
+      completedBookings: completed,
+      bookingsThisMonth,
+      bookingsLastMonth,
+      bookingGrowth: Math.round(bookingGrowth * 100) / 100,
+      monthlyBookings,
+    };
+  }
+
+  /**
+   * Get monthly booking counts for a given year
+   */
+  private async getMonthlyBookings(year: number) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+
+    const result = await Promise.all(
+      months.map(async (month, index) => {
+        const startOfMonth = new Date(year, index, 1);
+        const endOfMonth = new Date(year, index + 1, 0, 23, 59, 59, 999);
+
+        const count = await this.prisma.booking.count({
+          where: {
+            createdAt: {
+              gte: startOfMonth,
+              lte: endOfMonth,
+            },
+          },
+        });
+
+        return { month, count };
+      }),
+    );
+
+    return result;
+  }
 }
