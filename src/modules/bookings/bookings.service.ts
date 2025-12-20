@@ -544,7 +544,7 @@ export class BookingService {
           where: { status: BookingStatus.CANCELED },
         }),
         this.prisma.booking.count({
-          where: { status: BookingStatus.COMPLETED },
+          where: { status: BookingStatus.CONFIRMED },
         }),
       ],
     );
