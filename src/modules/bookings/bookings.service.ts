@@ -628,4 +628,39 @@ export class BookingService {
 
     return result;
   }
+
+  /**
+   * Update booking status when payment event is received
+   * Called by RabbitMQ consumer when payment.success or payment.failed events arrive
+   */
+  async updateBookingPaymentStatus(
+    bookingId: string,
+    bookingStatus: BookingStatus,
+    paymentStatus: PaymentStatus,
+  ) {
+    try {
+      const booking = await this.prisma.booking.update({
+        where: { id: bookingId },
+        data: {
+          status: bookingStatus,
+          paymentStatus: paymentStatus,
+        },
+        include: { details: true },
+      });
+
+      // Update cache
+      await this.redisService.set(`booking:${bookingId}`, booking, 3600);
+      this.logger.log(
+        `Booking ${bookingId} updated: status=${bookingStatus}, paymentStatus=${paymentStatus}`,
+      );
+
+      return booking;
+    } catch (error) {
+      this.logger.error(
+        `Failed to update booking payment status for ${bookingId}: ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
+  }
 }
