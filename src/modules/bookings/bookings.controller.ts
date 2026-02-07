@@ -52,6 +52,18 @@ export class BookingController {
     }
   }
 
+  @Get('check-reviewed')
+  async checkUserBookedRoom(
+    @Req() req: Request,
+    @Query('roomId') roomId: string,
+  ) {
+    const userId = req.headers['x-user-id'] as string;
+    console.log('UserId from header:', userId);
+    const bookingId = await this.bookingsService.hasCompletedBooking(userId, roomId);
+
+    return { bookingId };
+  }
+
   @Get()
   async findAll(@Query() query: FindAllDto, @Req() req: Request) {
     try {
@@ -169,4 +181,5 @@ export class BookingController {
       throw new BadRequestException(error.message);
     }
   }
+
 }

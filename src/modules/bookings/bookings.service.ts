@@ -6,12 +6,8 @@ import { BookingStatus, PaymentStatus } from './dto/enum';
 import { FindAllDto } from '../../common/global/find-all.dto';
 import { RabbitMQProducerService } from '../../messaging/rabbitmq/rabbitmq.producer.service';
 import { RedisService } from '../../messaging/redis/redis.service';
-import { KafkaProducerService } from 'src/messaging/kafka/kafka.producer.service';
 import { ExternalService } from '../../common/external/external.service';
 import { ConfigService } from '@nestjs/config';
-// import { BookingCreatedDto } from '../../messaging/rabbitmq/dto/booking-created.dto.service';
-// import { BookingUpdatedDto } from '../../messaging/rabbitmq/dto/booking-updated.dto';
-// import { BookingCanceledDto } from '../../messaging/rabbitmq/dto/booking-canceled.dto';
 
 @Injectable()
 export class BookingService {
@@ -22,7 +18,6 @@ export class BookingService {
     private readonly prisma: PrismaService,
     private readonly rabbitMQService: RabbitMQProducerService,
     private readonly redisService: RedisService,
-    private readonly kafkaProducerService: KafkaProducerService,
     private readonly externalService: ExternalService,
     private readonly configService: ConfigService,
   ) {
@@ -51,10 +46,6 @@ export class BookingService {
         include: { details: true },
       });
 
-      // Cache booking
-      // await this.redisService.set(`booking:${booking.id}`, booking, 3600);
-      // this.logger.debug(`Cached booking:${booking.id}`);
-
       // Send RabbitMQ event for booking.created
       const bookingCreatedEvent: any = {
         bookingId: booking.id,
@@ -78,13 +69,6 @@ export class BookingService {
         );
         // Continue execution even if RabbitMQ fails
       }
-
-      await this.kafkaProducerService.emitBookingCreatedEvent(
-        bookingCreatedEvent,
-      );
-      this.logger.log(
-        `Published booking.created event to Kafka: ${booking.id}`,
-      );
 
       let payment: any = null;
 
@@ -384,7 +368,7 @@ export class BookingService {
           price: d.price,
         })),
       };
-      await this.rabbitMQService.publishBookingCreated(bookingUpdatedEvent);
+      await this.rabbitMQService.publishBookingUpdated(bookingUpdatedEvent);
       this.logger.log(`Published booking.updated event: ${booking.id}`);
 
       return booking;
@@ -419,7 +403,7 @@ export class BookingService {
       await this.redisService.set(`booking:${id}`, booking, 3600);
       this.logger.debug(`Updated cache for booking:${id}`);
 
-      // Send Kafka event for booking status change
+      // Send events
       const bookingStatusEvent: any = {
         bookingId: booking.id,
         userId: booking.userId,
@@ -431,10 +415,7 @@ export class BookingService {
       try {
         if (status === BookingStatus.CANCELED) {
           // Send RabbitMQ event for booking.canceled
-          await this.rabbitMQService.publishMessage(
-            'booking.canceled',
-            bookingStatusEvent,
-          );
+          await this.rabbitMQService.publishBookingCanceled(bookingStatusEvent);
           this.logger.log(`Published booking.canceled event: ${booking.id}`);
 
           // Send RabbitMQ payment cancel request
@@ -442,7 +423,7 @@ export class BookingService {
             (sum, detail) => sum + detail.price,
             0,
           );
-          await this.rabbitMQService.publishMessage('payment.cancel', {
+          await this.rabbitMQService.publishPaymentCancel({
             bookingId: booking.id,
             userId: booking.userId,
             amount: totalAmount,
@@ -457,27 +438,13 @@ export class BookingService {
           );
         } else if (status === BookingStatus.CONFIRMED) {
           // Send event for booking confirmed
-          await this.rabbitMQService.publishMessage(
-            'booking.confirmed',
-            bookingStatusEvent,
-          );
+          await this.rabbitMQService.publishBookingConfirmed(bookingStatusEvent);
           this.logger.log(`Published booking.confirmed event: ${booking.id}`);
         }
       } catch (error) {
         // Log warning nhưng không throw - booking đã được update thành công
         this.logger.warn(
           `Failed to publish RabbitMQ events for booking ${booking.id}: ${error.message || error}`,
-        );
-      }
-
-      // Send Kafka event (wrapped in try-catch)
-      try {
-        await this.kafkaProducerService.emitBookingCreatedEvent(
-          bookingStatusEvent,
-        );
-      } catch (error) {
-        this.logger.warn(
-          `Failed to publish Kafka event for booking ${booking.id}: ${error.message || error}`,
         );
       }
 
@@ -662,5 +629,25 @@ export class BookingService {
       );
       throw error;
     }
+  }
+
+  async hasCompletedBooking(userId: string, roomId: string): Promise<string | null> {
+    const booking = await this.prisma.booking.findFirst({
+      where: {
+        userId,
+        details: {
+          some: {
+            roomId,
+          },
+        },
+        paymentStatus: PaymentStatus.SUCCESS,
+        status: BookingStatus.CONFIRMED
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+    console.log("booking is check", booking)
+    return booking ? booking.id : null;
   }
 }

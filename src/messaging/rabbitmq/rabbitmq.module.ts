@@ -23,8 +23,8 @@ import { BookingsModule } from '../../modules/bookings/bookings.module';
             queue:
               configService.get<string>('RABBITMQ_QUEUE') || 'booking.payments',
             queueOptions: { durable: true },
-            // Lỗi do RPC reply queue của RabbitMQ bắt buộc auto-ack, nhưng bạn lại cấu hình/ack thủ công → RabbitMQ đóng channel (406).
-            //noAck: true, (ignore cái này để fix lỗi)
+            // Lỗi do RPC reply queue của RabbitMQ bắt buộc auto-ack.
+            noAck: true,
             // lưu ý: reply message không cần ack
             prefetchCount: 1,
           },
