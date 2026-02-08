@@ -64,6 +64,17 @@ export class BookingController {
     return { bookingId };
   }
 
+  @Get('my-bookings')
+  async getBookingByUserId(@Req() req: Request) {
+    try {
+      const userId = req.headers['x-user-id'] as string;
+      const booking = await this.bookingsService.getBookingByUserId(userId);
+      return new ResponseData(booking, HttpStatus.SUCCESS, HttpMessage.SUCCESS);
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
   @Get()
   async findAll(@Query() query: FindAllDto, @Req() req: Request) {
     try {
@@ -142,16 +153,6 @@ export class BookingController {
       }
 
       const booking = await this.bookingsService.cancel(id, status);
-      return new ResponseData(booking, HttpStatus.SUCCESS, HttpMessage.SUCCESS);
-    } catch (error) {
-      throw new BadRequestException(error.message);
-    }
-  }
-
-  @Get('user/:userId')
-  async getBookingByUserId(@Param('userId') userId: string) {
-    try {
-      const booking = await this.bookingsService.getBookingByUserId(userId);
       return new ResponseData(booking, HttpStatus.SUCCESS, HttpMessage.SUCCESS);
     } catch (error) {
       throw new BadRequestException(error.message);
