@@ -127,17 +127,22 @@ export class BookingService {
     return total;
   }
 
-  private normalizePaymentMethod(method?: string): 'VIETQR' | 'VNPAY' {
+  private normalizePaymentMethod(method?: string): 'VIETQR' | 'VNPAY' | 'MOMO' | 'PAYOS' {
     if (!method) {
       throw new Error('typePayment is required');
     }
 
     const normalized = method.trim().toUpperCase();
-    if (normalized !== 'VIETQR' && normalized !== 'VNPAY') {
+    if (
+      normalized !== 'VIETQR' &&
+      normalized !== 'VNPAY' &&
+      normalized !== 'MOMO' &&
+      normalized !== 'PAYOS'
+    ) {
       throw new Error('Unsupported payment method');
     }
 
-    return normalized as 'VIETQR' | 'VNPAY';
+    return normalized as 'VIETQR' | 'VNPAY' | 'MOMO' | 'PAYOS';
   }
 
   private async createPaymentSession(payload: {

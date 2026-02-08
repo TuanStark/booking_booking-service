@@ -34,8 +34,8 @@ export class CreateBookingDto {
   endDate: string;
 
   @IsString()
-  @IsIn(['VIETQR', 'VNPAY'], {
-    message: 'paymentMethod must be either VIETQR or VNPAY',
+  @IsIn(['VIETQR', 'VNPAY', 'MOMO', 'PAYOS'], {
+    message: 'paymentMethod must be either VIETQR, VNPAY, MOMO or PAYOS',
   })
   paymentMethod: string;
 
