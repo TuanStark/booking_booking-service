@@ -12,6 +12,9 @@ import { BookingStatus } from './enum';
 
 class BookingDetailItem {
   @IsUUID()
+  id: string;
+
+  @IsUUID()
   roomId: string;
 
   @IsNumber()

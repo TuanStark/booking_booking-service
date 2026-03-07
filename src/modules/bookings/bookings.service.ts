@@ -349,7 +349,7 @@ export class BookingService {
           status: dto.status,
           details: {
             update: dto.details?.map((d) => ({
-              where: { id: d.roomId },
+              where: { id: d.id },
               data: {
                 price: d.price,
                 time: d.time,
@@ -364,17 +364,21 @@ export class BookingService {
       await this.redisService.set(`booking:${id}`, booking, 3600);
       this.logger.debug(`Updated cache for booking:${id}`);
 
-      // Send RabbitMQ event for booking.updated
-      const bookingUpdatedEvent: any = {
-        bookingId: booking.id,
-        status: booking.status,
-        details: booking.details.map((d) => ({
-          roomId: d.roomId,
-          price: d.price,
-        })),
-      };
-      await this.rabbitMQService.publishBookingUpdated(bookingUpdatedEvent);
-      this.logger.log(`Published booking.updated event: ${booking.id}`);
+      // Send RabbitMQ event for booking.updated (wrapped in try-catch)
+      try {
+        const bookingUpdatedEvent: any = {
+          bookingId: booking.id,
+          status: booking.status,
+          details: booking.details.map((d) => ({
+            roomId: d.roomId,
+            price: d.price,
+          })),
+        };
+        await this.rabbitMQService.publishBookingUpdated(bookingUpdatedEvent);
+        this.logger.log(`Published booking.updated event: ${booking.id}`);
+      } catch (error) {
+        this.logger.warn(`Failed to publish booking.updated event: ${error.message}`);
+      }
 
       return booking;
     } catch (error) {
@@ -505,21 +509,16 @@ export class BookingService {
   async getStats(year?: number) {
     const currentYear = year || new Date().getFullYear();
 
-    const [total, pending, confirmed, cancelled, completed] = await Promise.all(
-      [
-        this.prisma.booking.count(),
-        this.prisma.booking.count({ where: { status: BookingStatus.PENDING } }),
-        this.prisma.booking.count({
-          where: { status: BookingStatus.CONFIRMED },
-        }),
-        this.prisma.booking.count({
-          where: { status: BookingStatus.CANCELED },
-        }),
-        this.prisma.booking.count({
-          where: { status: BookingStatus.CONFIRMED },
-        }),
-      ],
-    );
+    const [total, pending, confirmed, cancelled] = await Promise.all([
+      this.prisma.booking.count(),
+      this.prisma.booking.count({ where: { status: BookingStatus.PENDING } }),
+      this.prisma.booking.count({
+        where: { status: BookingStatus.CONFIRMED },
+      }),
+      this.prisma.booking.count({
+        where: { status: BookingStatus.CANCELED },
+      }),
+    ]);
 
     // Get monthly bookings
     const monthlyBookings = await this.getMonthlyBookings(currentYear);
@@ -553,7 +552,6 @@ export class BookingService {
       pendingBookings: pending,
       confirmedBookings: confirmed,
       cancelledBookings: cancelled,
-      completedBookings: completed,
       bookingsThisMonth,
       bookingsLastMonth,
       bookingGrowth: Math.round(bookingGrowth * 100) / 100,
