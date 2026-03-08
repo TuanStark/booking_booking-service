@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe, Logger } from '@nestjs/common';
+import { Transport } from '@nestjs/microservices';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -22,6 +23,21 @@ async function bootstrap() {
   // Log service startup
   logger.log('🚀 Starting Booking Service...');
 
+  // Connect RabbitMQ Microservice
+  app.connectMicroservice({
+    transport: Transport.RMQ,
+    options: {
+      urls: [process.env.RABBITMQ_URL || 'amqp://localhost:5672'],
+      queue: process.env.RABBITMQ_QUEUE || 'booking_worker_queue',
+      queueOptions: {
+        durable: true,
+      },
+      noAck: true,
+      prefetchCount: 1,
+    },
+  });
+
+  await app.startAllMicroservices();
   await app.listen(process.env.PORT ?? 3005);
 
   logger.log(

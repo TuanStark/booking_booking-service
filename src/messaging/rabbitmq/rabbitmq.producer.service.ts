@@ -1,64 +1,78 @@
-import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
-import { ClientProxy } from '@nestjs/microservices';
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { lastValueFrom } from 'rxjs';
+import * as amqp from 'amqp-connection-manager';
+import { ChannelWrapper } from 'amqp-connection-manager';
+import { ConfirmChannel } from 'amqplib';
 
 @Injectable()
-export class RabbitMQProducerService implements OnModuleDestroy {
+export class RabbitMQProducerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RabbitMQProducerService.name);
-  private readonly routingKeyCreated: string;
-  private readonly routingKeyUpdated: string;
-  private readonly routingKeyCanceled: string;
-  private readonly routingKeyConfirmed: string;
+  private connection: amqp.AmqpConnectionManager;
+  private channelWrapper: ChannelWrapper;
 
-  constructor(
-    @Inject('RABBITMQ_CLIENT') private readonly client: ClientProxy,
-    private readonly configService: ConfigService,
-  ) {
-    this.routingKeyCreated = 'booking.created';
-    this.routingKeyUpdated = 'booking.updated';
-    this.routingKeyCanceled = 'booking.canceled';
-    this.routingKeyConfirmed = 'booking.confirmed';
+  private readonly exchange: string;
+  private readonly queue: string;
+
+  constructor(private readonly configService: ConfigService) {
+    this.exchange = this.configService.get<string>('RABBITMQ_EXCHANGE') || 'booking_topic_exchange';
+    this.queue = this.configService.get<string>('RABBITMQ_QUEUE') || 'booking_worker_queue';
   }
 
-  async publishMessage(pattern: string, data: any): Promise<void> {
+  async onModuleInit() {
+    const url = this.configService.get<string>('RABBITMQ_URL') || 'amqp://localhost:5672';
+    this.connection = amqp.connect([url]);
+
+    this.connection.on('connect', () => this.logger.log('Connected to RabbitMQ!'));
+    this.connection.on('disconnect', err => this.logger.error('Disconnected from RabbitMQ.', err));
+
+    this.channelWrapper = this.connection.createChannel({
+      json: true,
+      setup: async (channel: ConfirmChannel) => {
+        // 1. Assert Topic Exchange
+        await channel.assertExchange(this.exchange, 'topic', { durable: true });
+
+        // 2. Assert Queue
+        await channel.assertQueue(this.queue, { durable: true });
+
+        // 3. Bind Queue to Exchange with routing keys this service needs to listen to
+        // Booking Service needs to listen to payment events
+        await channel.bindQueue(this.queue, this.exchange, 'payment.*');
+
+        this.logger.log(`RabbitMQ Topology Setup: Exchange=${this.exchange}, Queue=${this.queue}`);
+      },
+    });
+  }
+
+  async publishMessage(routingKey: string, data: any): Promise<void> {
     try {
-      if (!this.client) {
-        this.logger.error('RabbitMQ client is not available');
-        throw new Error('RabbitMQ client is not available');
+      if (!this.channelWrapper) {
+        throw new Error('RabbitMQ channel is not available');
       }
 
-      await this.client.connect();
-      await lastValueFrom(this.client.emit(pattern, data));
-      this.logger.log(
-        `Message published to pattern: ${pattern}, data: ${JSON.stringify(data)}`,
-      );
+      await this.channelWrapper.publish(this.exchange, routingKey, data, {
+        persistent: true,
+      } as any);
+
+      this.logger.log(`Message published to exchange ${this.exchange} with routingKey: ${routingKey}`);
     } catch (error: any) {
-      const errorMessage =
-        error?.message || error?.toString() || 'Unknown error';
-      this.logger.error(
-        `Failed to publish message to pattern ${pattern}: ${errorMessage}`,
-        error?.stack,
-      );
-      // We don't always want to throw here to avoid crashing the whole flow if messaging fails
-      // But for critical events, we might want to know.
+      this.logger.error(`Failed to publish message to routingKey ${routingKey}: ${error.message}`, error.stack);
     }
   }
 
   async publishBookingCreated(data: any): Promise<void> {
-    await this.publishMessage(this.routingKeyCreated, data);
+    await this.publishMessage('booking.created', data);
   }
 
   async publishBookingUpdated(data: any): Promise<void> {
-    await this.publishMessage(this.routingKeyUpdated, data);
+    await this.publishMessage('booking.updated', data);
   }
 
   async publishBookingCanceled(data: any): Promise<void> {
-    await this.publishMessage(this.routingKeyCanceled, data);
+    await this.publishMessage('booking.canceled', data);
   }
 
   async publishBookingConfirmed(data: any): Promise<void> {
-    await this.publishMessage(this.routingKeyConfirmed, data);
+    await this.publishMessage('booking.confirmed', data);
   }
 
   async publishPaymentCancel(data: any): Promise<void> {
@@ -66,7 +80,12 @@ export class RabbitMQProducerService implements OnModuleDestroy {
   }
 
   async onModuleDestroy() {
-    await this.client.close();
-    this.logger.log('RabbitMQ client closed');
+    if (this.channelWrapper) {
+      await this.channelWrapper.close();
+    }
+    if (this.connection) {
+      await this.connection.close();
+    }
+    this.logger.log('RabbitMQ connection closed');
   }
 }
