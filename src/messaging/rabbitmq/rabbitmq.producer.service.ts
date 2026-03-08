@@ -49,7 +49,13 @@ export class RabbitMQProducerService implements OnModuleInit, OnModuleDestroy {
         throw new Error('RabbitMQ channel is not available');
       }
 
-      await this.channelWrapper.publish(this.exchange, routingKey, data, {
+      // NestJS native RMQ consumers expect strict { pattern, data } format
+      const payload = {
+        pattern: routingKey,
+        data: data,
+      };
+
+      await this.channelWrapper.publish(this.exchange, routingKey, payload, {
         persistent: true,
       } as any);
 
