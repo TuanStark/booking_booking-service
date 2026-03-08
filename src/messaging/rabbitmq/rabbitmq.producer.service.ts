@@ -55,8 +55,9 @@ export class RabbitMQProducerService implements OnModuleInit, OnModuleDestroy {
         data: data,
       };
 
-      await this.channelWrapper.publish(this.exchange, routingKey, payload, {
+      await this.channelWrapper.publish(this.exchange, routingKey, Buffer.from(JSON.stringify(payload)), {
         persistent: true,
+        contentType: 'application/json',
       } as any);
 
       this.logger.log(`Message published to exchange ${this.exchange} with routingKey: ${routingKey}`);
