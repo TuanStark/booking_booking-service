@@ -5,6 +5,7 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { RabbitMQModule } from '../../messaging/rabbitmq/rabbitmq.module';
 import { RedisModule } from '../../messaging/redis/redis.module';
 import { ExternalModule } from '../../common/external/external.module';
+import { BookingsCronService } from './bookings.cron';
 
 @Module({
   imports: [
@@ -16,7 +17,7 @@ import { ExternalModule } from '../../common/external/external.module';
     ExternalModule,
   ],
   controllers: [BookingController],
-  providers: [BookingService],
+  providers: [BookingService, BookingsCronService],
   exports: [BookingService],
 })
 export class BookingsModule { }

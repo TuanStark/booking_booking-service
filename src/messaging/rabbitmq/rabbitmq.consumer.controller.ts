@@ -77,15 +77,19 @@ export class RabbitMQConsumerController {
                 throw new Error('Missing bookingId in payment event');
             }
 
-            // Update payment status to FAILED but keep booking as PENDING
+            // Cancel the booking and mark payment as FAILED
+            // This triggers the cancel() pipeline which emits 'booking.canceled' event
+            // to automatically release the Room Capacity via Saga.
+            await this.bookingService.cancel(data.bookingId, BookingStatus.CANCELED);
+            
             await this.bookingService.updateBookingPaymentStatus(
                 data.bookingId,
-                BookingStatus.PENDING, // Keep as pending, user can retry payment
+                BookingStatus.CANCELED,
                 PaymentStatus.FAILED,
             );
 
             this.logger.log(
-                `Booking ${data.bookingId} payment status updated to FAILED`,
+                `Booking ${data.bookingId} cancelled due to payment failure. Emitted booking.canceled to release rooms.`,
             );
 
             const channel = context.getChannelRef();
