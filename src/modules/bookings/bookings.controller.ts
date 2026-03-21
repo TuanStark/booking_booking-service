@@ -31,6 +31,13 @@ export class BookingController {
   ) {
     // Extract userId from x-user-id header sent by API Gateway
     const userId = req.headers['x-user-id'] as string;
+    
+    // Extract token from authorization header for external service calls
+    const authHeader = req.headers['authorization'] as string;
+    const token = authHeader?.startsWith('Bearer ')
+      ? authHeader.substring(7)
+      : authHeader;
+
     console.log('Create booking request received:', createBookingDto);
     console.log('UserId from header:', userId);
 
@@ -42,6 +49,7 @@ export class BookingController {
       const booking = await this.bookingsService.create(
         userId,
         createBookingDto,
+        token,
       );
       return new ResponseData(booking, HttpStatus.CREATED, HttpMessage.CREATED);
     } catch (error) {

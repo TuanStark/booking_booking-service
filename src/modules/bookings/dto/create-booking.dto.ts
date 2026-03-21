@@ -15,7 +15,8 @@ class BookingDetailItem {
   roomId: string;
 
   @IsNumber()
-  price: number;
+  @IsOptional()
+  price?: number;
 
   @IsOptional()
   @IsString()

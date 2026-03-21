@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
@@ -25,9 +25,32 @@ export class BookingService {
       this.configService.get<string>('PAYMENT_SERVICE_URL') || 'http://localhost:3006';
   }
 
-  async create(userId: string, dto: CreateBookingDto) {
+  async create(userId: string, dto: CreateBookingDto, token?: string) {
     try {
-      const totalAmount = this.calculateTotalAmount(dto);
+      if (!dto.details || dto.details.length === 0) {
+        throw new BadRequestException('Booking details are required');
+      }
+
+      const roomIds = dto.details.map((d) => d.roomId);
+      const roomsMap = await this.externalService.getRoomsByIds(roomIds, token);
+
+      let totalAmount = 0;
+      for (const detail of dto.details) {
+        const realRoom = roomsMap.get(detail.roomId);
+        if (!realRoom) {
+          throw new BadRequestException(`Room with ID ${detail.roomId} not found`);
+        }
+
+        // Trust only backend price to prevent payload manipulation
+        detail.price = Number(realRoom.price);
+        
+        // Calculate amount accurately: price * time (duration)
+        totalAmount += detail.price * detail.time;
+      }
+
+      if (totalAmount <= 0) {
+        throw new BadRequestException('Total amount must be greater than 0');
+      }
 
       const booking = await this.prisma.booking.create({
         data: {
@@ -110,22 +133,7 @@ export class BookingService {
     }
   }
 
-  private calculateTotalAmount(dto: CreateBookingDto): number {
-    if (!dto.details || dto.details.length === 0) {
-      throw new Error('Booking details are required');
-    }
 
-    const total = dto.details.reduce(
-      (sum, detail) => sum + Number(detail.price || 0),
-      0,
-    );
-
-    if (total <= 0) {
-      throw new Error('Total amount must be greater than 0');
-    }
-
-    return total;
-  }
 
   private normalizePaymentMethod(method?: string): 'VIETQR' | 'VNPAY' | 'MOMO' | 'PAYOS' {
     if (!method) {
