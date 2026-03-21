@@ -19,4 +19,4 @@ import { ScheduleModule } from '@nestjs/schedule';
   controllers: [],
   providers: [PrismaService],
 })
-export class AppModule { }
+export class AppModule {}

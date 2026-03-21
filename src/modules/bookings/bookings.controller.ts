@@ -22,7 +22,7 @@ import { BookingStatus } from './dto/enum';
 
 @Controller('bookings')
 export class BookingController {
-  constructor(private readonly bookingsService: BookingService) { }
+  constructor(private readonly bookingsService: BookingService) {}
 
   @Post()
   async create(
@@ -31,7 +31,7 @@ export class BookingController {
   ) {
     // Extract userId from x-user-id header sent by API Gateway
     const userId = req.headers['x-user-id'] as string;
-    
+
     // Extract token from authorization header for external service calls
     const authHeader = req.headers['authorization'] as string;
     const token = authHeader?.startsWith('Bearer ')
@@ -67,7 +67,10 @@ export class BookingController {
   ) {
     const userId = req.headers['x-user-id'] as string;
     console.log('UserId from header:', userId);
-    const bookingId = await this.bookingsService.hasCompletedBooking(userId, roomId);
+    const bookingId = await this.bookingsService.hasCompletedBooking(
+      userId,
+      roomId,
+    );
 
     return { bookingId };
   }
@@ -190,5 +193,4 @@ export class BookingController {
       throw new BadRequestException(error.message);
     }
   }
-
 }

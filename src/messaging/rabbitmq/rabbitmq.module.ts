@@ -5,13 +5,9 @@ import { RabbitMQConsumerController } from './rabbitmq.consumer.controller';
 import { BookingsModule } from '../../modules/bookings/bookings.module';
 
 @Module({
-  imports: [
-    ConfigModule,
-    forwardRef(() => BookingsModule),
-  ],
+  imports: [ConfigModule, forwardRef(() => BookingsModule)],
   controllers: [RabbitMQConsumerController],
   providers: [RabbitMQProducerService],
   exports: [RabbitMQProducerService],
 })
-export class RabbitMQModule { }
-
+export class RabbitMQModule {}

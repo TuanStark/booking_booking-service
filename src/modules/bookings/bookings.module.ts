@@ -20,4 +20,4 @@ import { BookingsCronService } from './bookings.cron';
   providers: [BookingService, BookingsCronService],
   exports: [BookingService],
 })
-export class BookingsModule { }
+export class BookingsModule {}

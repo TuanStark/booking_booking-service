@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, Logger, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  Logger,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
@@ -22,7 +27,8 @@ export class BookingService {
     private readonly configService: ConfigService,
   ) {
     this.paymentServiceUrl =
-      this.configService.get<string>('PAYMENT_SERVICE_URL') || 'http://localhost:3006';
+      this.configService.get<string>('PAYMENT_SERVICE_URL') ||
+      'http://localhost:3006';
   }
 
   async create(userId: string, dto: CreateBookingDto, token?: string) {
@@ -39,18 +45,25 @@ export class BookingService {
         { useCache: false },
       );
 
-      let totalAmount = 0;
-      for (const detail of dto.details) {
+      const detailCreates = dto.details.map((detail) => {
         const realRoom = roomsMap.get(detail.roomId);
         if (!realRoom) {
-          throw new BadRequestException(`Room with ID ${detail.roomId} not found`);
+          throw new BadRequestException(
+            `Room with ID ${detail.roomId} not found`,
+          );
         }
+        const price = Number(realRoom.price);
+        return {
+          roomId: detail.roomId,
+          price,
+          note: detail.note,
+          time: detail.time,
+        };
+      });
 
-        // Trust only backend price to prevent payload manipulation
-        detail.price = Number(realRoom.price);
-        
-        // Calculate amount accurately: price * time (duration)
-        totalAmount += detail.price * detail.time;
+      let totalAmount = 0;
+      for (const d of detailCreates) {
+        totalAmount += d.price * d.time;
       }
 
       if (totalAmount <= 0) {
@@ -63,12 +76,7 @@ export class BookingService {
           startDate: new Date(dto.startDate),
           endDate: new Date(dto.endDate),
           details: {
-            create: dto.details.map((d) => ({
-              roomId: d.roomId,
-              price: d.price,
-              note: d.note,
-              time: d.time,
-            })),
+            create: detailCreates,
           },
         },
         include: { details: true },
@@ -138,9 +146,9 @@ export class BookingService {
     }
   }
 
-
-
-  private normalizePaymentMethod(method?: string): 'VIETQR' | 'VNPAY' | 'MOMO' | 'PAYOS' {
+  private normalizePaymentMethod(
+    method?: string,
+  ): 'VIETQR' | 'VNPAY' | 'MOMO' | 'PAYOS' {
     if (!method) {
       throw new Error('typePayment is required');
     }
@@ -155,7 +163,7 @@ export class BookingService {
       throw new Error('Unsupported payment method');
     }
 
-    return normalized as 'VIETQR' | 'VNPAY' | 'MOMO' | 'PAYOS';
+    return normalized;
   }
 
   private async createPaymentSession(payload: {
@@ -238,11 +246,11 @@ export class BookingService {
     const searchUpCase = search.charAt(0).toUpperCase() + search.slice(1);
     const where = search
       ? {
-        OR: [
-          { userId: { contains: searchUpCase } },
-          { details: { some: { roomId: { contains: searchUpCase } } } },
-        ],
-      }
+          OR: [
+            { userId: { contains: searchUpCase } },
+            { details: { some: { roomId: { contains: searchUpCase } } } },
+          ],
+        }
       : {};
     const orderBy = { [sortBy]: sortOrder };
 
@@ -390,7 +398,9 @@ export class BookingService {
         await this.rabbitMQService.publishBookingUpdated(bookingUpdatedEvent);
         this.logger.log(`Published booking.updated event: ${booking.id}`);
       } catch (error) {
-        this.logger.warn(`Failed to publish booking.updated event: ${error.message}`);
+        this.logger.warn(
+          `Failed to publish booking.updated event: ${error.message}`,
+        );
       }
 
       return booking;
@@ -460,7 +470,9 @@ export class BookingService {
           );
         } else if (status === BookingStatus.CONFIRMED) {
           // Send event for booking confirmed
-          await this.rabbitMQService.publishBookingConfirmed(bookingStatusEvent);
+          await this.rabbitMQService.publishBookingConfirmed(
+            bookingStatusEvent,
+          );
           this.logger.log(`Published booking.confirmed event: ${booking.id}`);
         }
       } catch (error) {
@@ -647,7 +659,10 @@ export class BookingService {
     }
   }
 
-  async hasCompletedBooking(userId: string, roomId: string): Promise<string | null> {
+  async hasCompletedBooking(
+    userId: string,
+    roomId: string,
+  ): Promise<string | null> {
     const booking = await this.prisma.booking.findFirst({
       where: {
         userId,
@@ -657,13 +672,13 @@ export class BookingService {
           },
         },
         paymentStatus: PaymentStatus.SUCCESS,
-        status: BookingStatus.CONFIRMED
+        status: BookingStatus.CONFIRMED,
       },
       orderBy: {
-        createdAt: 'desc'
-      }
+        createdAt: 'desc',
+      },
     });
-    console.log("booking is check", booking)
+    console.log('booking is check', booking);
     return booking ? booking.id : null;
   }
 }

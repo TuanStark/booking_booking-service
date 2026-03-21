@@ -41,16 +41,22 @@ export class BookingsCronService {
         return;
       }
 
-      this.logger.log(`Found ${expiredBookings.length} expired bookings to cancel.`);
+      this.logger.log(
+        `Found ${expiredBookings.length} expired bookings to cancel.`,
+      );
 
       // Cancel each booking sequentially to ensure events are dispatched reliably
       for (const booking of expiredBookings) {
         try {
           // This will change status to CANCELED and emit 'booking.canceled' RabbitMQ event
           await this.bookingService.cancel(booking.id, BookingStatus.CANCELED);
-          this.logger.log(`Automatically cancelled expired booking: ${booking.id}`);
+          this.logger.log(
+            `Automatically cancelled expired booking: ${booking.id}`,
+          );
         } catch (error) {
-          this.logger.error(`Failed to cancel expired booking ${booking.id}: ${error.message}`);
+          this.logger.error(
+            `Failed to cancel expired booking ${booking.id}: ${error.message}`,
+          );
         }
       }
     } catch (error) {

@@ -4,103 +4,101 @@ import { BookingService } from '../../modules/bookings/bookings.service';
 import { BookingStatus, PaymentStatus } from '../../modules/bookings/dto/enum';
 
 interface PaymentEventData {
-    paymentId: string;
-    bookingId: string;
-    amount: number;
-    status: string;
-    transactionId?: string;
-    reference?: string;
+  paymentId: string;
+  bookingId: string;
+  amount: number;
+  status: string;
+  transactionId?: string;
+  reference?: string;
 }
 
 @Controller()
 export class RabbitMQConsumerController {
-    private readonly logger = new Logger(RabbitMQConsumerController.name);
+  private readonly logger = new Logger(RabbitMQConsumerController.name);
 
-    constructor(private readonly bookingService: BookingService) { }
+  constructor(private readonly bookingService: BookingService) {}
 
-    /**
-     * Handle payment.success event from payment service
-     * Update booking status to CONFIRMED
-     */
-    @EventPattern('payment.success')
-    async handlePaymentSuccess(
-        @Payload() data: PaymentEventData,
-        @Ctx() context: RmqContext,
-    ) {
-        try {
-            this.logger.log(
-                `Received payment.success event: ${JSON.stringify(data)}`,
-            );
+  /**
+   * Handle payment.success event from payment service
+   * Update booking status to CONFIRMED
+   */
+  @EventPattern('payment.success')
+  async handlePaymentSuccess(
+    @Payload() data: PaymentEventData,
+    @Ctx() context: RmqContext,
+  ) {
+    try {
+      this.logger.log(
+        `Received payment.success event: ${JSON.stringify(data)}`,
+      );
 
-            if (!data.bookingId) {
-                throw new Error('Missing bookingId in payment event');
-            }
+      if (!data.bookingId) {
+        throw new Error('Missing bookingId in payment event');
+      }
 
-            // Update booking status to CONFIRMED and payment status to SUCCESS
-            await this.bookingService.updateBookingPaymentStatus(
-                data.bookingId,
-                BookingStatus.CONFIRMED,
-                PaymentStatus.SUCCESS,
-            );
+      // Update booking status to CONFIRMED and payment status to SUCCESS
+      await this.bookingService.updateBookingPaymentStatus(
+        data.bookingId,
+        BookingStatus.CONFIRMED,
+        PaymentStatus.SUCCESS,
+      );
 
-            this.logger.log(
-                `Booking ${data.bookingId} updated to CONFIRMED after payment success`,
-            );
+      this.logger.log(
+        `Booking ${data.bookingId} updated to CONFIRMED after payment success`,
+      );
 
-            const channel = context.getChannelRef();
-            channel.ack(context.getMessage());
-        } catch (error) {
-            this.logger.error(
-                `Error processing payment.success: ${error.message}`,
-                error.stack,
-            );
-            const channel = context.getChannelRef();
-            channel.nack(context.getMessage(), false, true);
-        }
+      const channel = context.getChannelRef();
+      channel.ack(context.getMessage());
+    } catch (error) {
+      this.logger.error(
+        `Error processing payment.success: ${error.message}`,
+        error.stack,
+      );
+      const channel = context.getChannelRef();
+      channel.nack(context.getMessage(), false, true);
     }
+  }
 
-    /**
-     * Handle payment.failed event from payment service
-     * Keep booking status as PENDING or update payment status
-     */
-    @EventPattern('payment.failed')
-    async handlePaymentFailed(
-        @Payload() data: PaymentEventData,
-        @Ctx() context: RmqContext,
-    ) {
-        try {
-            this.logger.log(
-                `Received payment.failed event: ${JSON.stringify(data)}`,
-            );
+  /**
+   * Handle payment.failed event from payment service
+   * Keep booking status as PENDING or update payment status
+   */
+  @EventPattern('payment.failed')
+  async handlePaymentFailed(
+    @Payload() data: PaymentEventData,
+    @Ctx() context: RmqContext,
+  ) {
+    try {
+      this.logger.log(`Received payment.failed event: ${JSON.stringify(data)}`);
 
-            if (!data.bookingId) {
-                throw new Error('Missing bookingId in payment event');
-            }
+      if (!data.bookingId) {
+        throw new Error('Missing bookingId in payment event');
+      }
 
-            // Cancel the booking and mark payment as FAILED
-            // This triggers the cancel() pipeline which emits 'booking.canceled' event
-            // to automatically release the Room Capacity via Saga.
-            await this.bookingService.cancel(data.bookingId, BookingStatus.CANCELED);
-            
-            await this.bookingService.updateBookingPaymentStatus(
-                data.bookingId,
-                BookingStatus.CANCELED,
-                PaymentStatus.FAILED,
-            );
+      // Cancel the booking and mark payment as FAILED
+      // This triggers the cancel() pipeline which emits 'booking.canceled' event
+      // to automatically release the Room Capacity via Saga.
+      await this.bookingService.cancel(data.bookingId, BookingStatus.CANCELED);
 
-            this.logger.log(
-                `Booking ${data.bookingId} cancelled due to payment failure. Emitted booking.canceled to release rooms.`,
-            );
+      await this.bookingService.updateBookingPaymentStatus(
+        data.bookingId,
+        BookingStatus.CANCELED,
+        PaymentStatus.FAILED,
+      );
 
-            const channel = context.getChannelRef();
-            channel.ack(context.getMessage());
-        } catch (error) {
-            this.logger.error(
-                `Error processing payment.failed: ${error.message}`,
-                error.stack,
-            );
-            const channel = context.getChannelRef();
-            channel.nack(context.getMessage(), false, true);
-        }
+      this.logger.log(
+        `Booking ${data.bookingId} cancelled due to payment failure. Emitted booking.canceled to release rooms.`,
+      );
+
+      const channel = context.getChannelRef();
+      channel.ack(context.getMessage());
+    } catch (error) {
+      this.logger.error(
+        `Error processing payment.failed: ${error.message}`,
+        error.stack,
+      );
+      const channel = context.getChannelRef();
+      channel.nack(context.getMessage(), false, true);
     }
+  }
 }

@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as amqp from 'amqp-connection-manager';
 import { ChannelWrapper } from 'amqp-connection-manager';
@@ -14,16 +19,25 @@ export class RabbitMQProducerService implements OnModuleInit, OnModuleDestroy {
   private readonly queue: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.exchange = this.configService.get<string>('RABBITMQ_EXCHANGE') || 'booking_topic_exchange';
-    this.queue = this.configService.get<string>('RABBITMQ_QUEUE') || 'booking_worker_queue';
+    this.exchange =
+      this.configService.get<string>('RABBITMQ_EXCHANGE') ||
+      'booking_topic_exchange';
+    this.queue =
+      this.configService.get<string>('RABBITMQ_QUEUE') ||
+      'booking_worker_queue';
   }
 
   async onModuleInit() {
-    const url = this.configService.get<string>('RABBITMQ_URL') || 'amqp://localhost:5672';
+    const url =
+      this.configService.get<string>('RABBITMQ_URL') || 'amqp://localhost:5672';
     this.connection = amqp.connect([url]);
 
-    this.connection.on('connect', () => this.logger.log('Connected to RabbitMQ!'));
-    this.connection.on('disconnect', err => this.logger.error('Disconnected from RabbitMQ.', err));
+    this.connection.on('connect', () =>
+      this.logger.log('Connected to RabbitMQ!'),
+    );
+    this.connection.on('disconnect', (err) =>
+      this.logger.error('Disconnected from RabbitMQ.', err),
+    );
 
     this.channelWrapper = this.connection.createChannel({
       setup: async (channel: ConfirmChannel) => {
@@ -37,7 +51,9 @@ export class RabbitMQProducerService implements OnModuleInit, OnModuleDestroy {
         // Booking Service needs to listen to payment events
         await channel.bindQueue(this.queue, this.exchange, 'payment.*');
 
-        this.logger.log(`RabbitMQ Topology Setup: Exchange=${this.exchange}, Queue=${this.queue}`);
+        this.logger.log(
+          `RabbitMQ Topology Setup: Exchange=${this.exchange}, Queue=${this.queue}`,
+        );
       },
     });
   }
@@ -53,14 +69,24 @@ export class RabbitMQProducerService implements OnModuleInit, OnModuleDestroy {
         data: data,
       };
 
-      await this.channelWrapper.publish(this.exchange, routingKey, Buffer.from(JSON.stringify(payload)), {
-        persistent: true,
-        contentType: 'application/json',
-      } as any);
+      await this.channelWrapper.publish(
+        this.exchange,
+        routingKey,
+        Buffer.from(JSON.stringify(payload)),
+        {
+          persistent: true,
+          contentType: 'application/json',
+        } as any,
+      );
 
-      this.logger.log(`Message published to exchange ${this.exchange} with routingKey: ${routingKey}`);
+      this.logger.log(
+        `Message published to exchange ${this.exchange} with routingKey: ${routingKey}`,
+      );
     } catch (error: any) {
-      this.logger.error(`Failed to publish message to routingKey ${routingKey}: ${error.message}`, error.stack);
+      this.logger.error(
+        `Failed to publish message to routingKey ${routingKey}: ${error.message}`,
+        error.stack,
+      );
     }
   }
 
