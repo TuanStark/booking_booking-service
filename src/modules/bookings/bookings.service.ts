@@ -32,7 +32,12 @@ export class BookingService {
       }
 
       const roomIds = dto.details.map((d) => d.roomId);
-      const roomsMap = await this.externalService.getRoomsByIds(roomIds, token);
+      // Force-refresh room price during booking creation to avoid stale Redis cache.
+      const roomsMap = await this.externalService.getRoomsByIds(
+        roomIds,
+        token,
+        { useCache: false },
+      );
 
       let totalAmount = 0;
       for (const detail of dto.details) {

@@ -143,7 +143,9 @@ export class ExternalService {
   async getRoomsByIds(
     roomIds: string[],
     token?: string,
+    options?: { useCache?: boolean },
   ): Promise<Map<string, any>> {
+    const useCache = options?.useCache ?? true;
     // Deduplicate và loại bỏ null/undefined
     const uniqueIds = [...new Set(roomIds.filter((id) => id))];
     if (uniqueIds.length === 0) {
@@ -153,18 +155,23 @@ export class ExternalService {
     const result = new Map<string, any>();
     const idsToFetch: string[] = [];
 
-    // Check cache trước
-    await Promise.all(
-      uniqueIds.map(async (id) => {
-        const cacheKey = `room:${id}`;
-        const cached = await this.redisService.get(cacheKey);
-        if (cached) {
-          result.set(id, cached);
-        } else {
-          idsToFetch.push(id);
-        }
-      }),
-    );
+    // Check cache trước (optional)
+    if (useCache) {
+      await Promise.all(
+        uniqueIds.map(async (id) => {
+          const cacheKey = `room:${id}`;
+          const cached = await this.redisService.get(cacheKey);
+          if (cached) {
+            result.set(id, cached);
+          } else {
+            idsToFetch.push(id);
+          }
+        }),
+      );
+    } else {
+      // Force-refresh: fetch all rooms from room-service, don't read/write cache.
+      idsToFetch.push(...uniqueIds);
+    }
 
     // Nếu đã có đủ từ cache, return luôn
     if (idsToFetch.length === 0) {
@@ -188,7 +195,9 @@ export class ExternalService {
           if (room) {
             const id = idsToFetch[index];
             result.set(id, room);
-            await this.redisService.set(`room:${id}`, room, this.cacheTTL);
+            if (useCache) {
+              await this.redisService.set(`room:${id}`, room, this.cacheTTL);
+            }
           }
         }),
       );
