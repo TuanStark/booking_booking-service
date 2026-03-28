@@ -2,6 +2,10 @@ export enum BookingStatus {
   PENDING = 'PENDING',
   CONFIRMED = 'CONFIRMED',
   CANCELED = 'CANCELED',
+  ACTIVE = 'ACTIVE',
+  EXPIRING_SOON = 'EXPIRING_SOON',
+  QUEUED = 'QUEUED',
+  COMPLETED = 'COMPLETED',
 }
 
 export enum PaymentStatus {

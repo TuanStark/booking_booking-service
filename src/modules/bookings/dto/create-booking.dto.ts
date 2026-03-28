@@ -21,10 +21,6 @@ class BookingDetailItem {
   @IsOptional()
   @IsString()
   note?: string;
-
-  @IsNumber()
-  @Type(() => Number)
-  time: number;
 }
 
 export class CreateBookingDto {

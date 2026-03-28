@@ -78,7 +78,7 @@ export class RabbitMQConsumerController {
       // Cancel the booking and mark payment as FAILED
       // This triggers the cancel() pipeline which emits 'booking.canceled' event
       // to automatically release the Room Capacity via Saga.
-      await this.bookingService.cancel(data.bookingId, BookingStatus.CANCELED);
+      await this.bookingService.updateStatus(data.bookingId, BookingStatus.CANCELED);
 
       await this.bookingService.updateBookingPaymentStatus(
         data.bookingId,

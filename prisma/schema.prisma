@@ -14,20 +14,24 @@ datasource db {
 }
 
 model Booking {
-  id          String           @id @default(uuid())
-  userId      String
-  status      BookingStatus    @default(PENDING)
-  startDate   DateTime
-  endDate     DateTime
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
-  paymentId   String?
-  paymentStatus PaymentStatus?
+  id              String           @id @default(uuid())
+  userId          String
+  status          BookingStatus    @default(PENDING)
+  startDate       DateTime
+  endDate         DateTime
+  durationMonths  Int              @default(3) // Số tháng thuê, validated >= 3 at application layer
+  isRelisted      Boolean          @default(false) // Whether room has been re-listed for next tenant
+  renewalDeadline DateTime?        // Deadline for current tenant to renew (endDate - 23 days)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  paymentId       String?
+  paymentStatus   PaymentStatus?
 
   // Relation
-  details     BookingDetail[]
+  details         BookingDetail[]
   @@map("bookings")
   @@index([userId])
+  @@index([status, endDate])       // Optimize cron queries for expiring/expired lookups
 }
 
 model BookingDetail {
@@ -35,19 +39,23 @@ model BookingDetail {
   bookingId   String
   roomId      String
   price       Float
-  time        Int
   note        String?  // optional: ghi chú hoặc yêu cầu thêm
   createdAt   DateTime @default(now())
 
   booking     Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   @@index([bookingId])
+  @@index([roomId])                // Optimize overlap detection queries
   @@map("booking_details")
 }
 
 enum BookingStatus {
-  PENDING
-  CONFIRMED
-  CANCELED
+  PENDING         // Mới tạo, chờ payment
+  CONFIRMED       // Payment thành công, chờ startDate
+  CANCELED        // Đã hủy
+  ACTIVE          // Đang thuê (startDate đã qua + payment SUCCESS)
+  EXPIRING_SOON   // Gần hết hạn (trong 30 ngày trước endDate)
+  QUEUED          // Pre-booking: đặt trước phòng sắp hết hạn, chờ phòng trống
+  COMPLETED       // Hết hạn / trả phòng thành công
 }
 
 enum PaymentStatus {

@@ -19,10 +19,6 @@ class BookingDetailItem {
 
   @IsNumber()
   price: number;
-
-  @IsNumber()
-  @Type(() => Number)
-  time: number;
 }
 
 export class UpdateBookingDto extends PartialType(CreateBookingDto) {

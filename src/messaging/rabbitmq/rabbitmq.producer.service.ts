@@ -47,8 +47,7 @@ export class RabbitMQProducerService implements OnModuleInit, OnModuleDestroy {
         // 2. Assert Queue
         await channel.assertQueue(this.queue, { durable: true });
 
-        // 3. Bind Queue to Exchange with routing keys this service needs to listen to
-        // Booking Service needs to listen to payment events
+        // 3. Bind Queue to Exchange — Booking service listens to payment events
         await channel.bindQueue(this.queue, this.exchange, 'payment.*');
 
         this.logger.log(
@@ -57,6 +56,10 @@ export class RabbitMQProducerService implements OnModuleInit, OnModuleDestroy {
       },
     });
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Generic publisher — wraps NestJS { pattern, data } format
+  // ═══════════════════════════════════════════════════════════════════════════
 
   async publishMessage(routingKey: string, data: any): Promise<void> {
     try {
@@ -90,6 +93,10 @@ export class RabbitMQProducerService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Typed publish methods — Original events
+  // ═══════════════════════════════════════════════════════════════════════════
+
   async publishBookingCreated(data: any): Promise<void> {
     await this.publishMessage('booking.created', data);
   }
@@ -109,6 +116,34 @@ export class RabbitMQProducerService implements OnModuleInit, OnModuleDestroy {
   async publishPaymentCancel(data: any): Promise<void> {
     await this.publishMessage('payment.cancel', data);
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Typed publish methods — Lease lifecycle events
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  async publishBookingActivated(data: any): Promise<void> {
+    await this.publishMessage('booking.activated', data);
+  }
+
+  async publishBookingExpiringSoon(data: any): Promise<void> {
+    await this.publishMessage('booking.expiring_soon', data);
+  }
+
+  async publishBookingCompleted(data: any): Promise<void> {
+    await this.publishMessage('booking.completed', data);
+  }
+
+  async publishBookingRenewed(data: any): Promise<void> {
+    await this.publishMessage('booking.renewed', data);
+  }
+
+  async publishBookingQueuedActivated(data: any): Promise<void> {
+    await this.publishMessage('booking.queued_activated', data);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Lifecycle
+  // ═══════════════════════════════════════════════════════════════════════════
 
   async onModuleDestroy() {
     if (this.channelWrapper) {
