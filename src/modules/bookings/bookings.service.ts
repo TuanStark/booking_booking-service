@@ -37,6 +37,9 @@ const CAPACITY_HOLD_STATUSES: BookingStatus[] = [
   BookingStatus.QUEUED,
 ];
 
+/** Giới hạn mỗi dòng booking khi tạo qua API công khai (sinh viên tự đặt). */
+const MAX_CREATE_BOOKING_OCCUPANCY_UNITS = 1;
+
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 @Injectable()
@@ -106,6 +109,11 @@ export class BookingService {
         if (units > roomCapacity) {
           throw new BadRequestException(
             `occupancyUnits (${units}) exceeds room capacity (${roomCapacity}) for room ${detail.roomId}`,
+          );
+        }
+        if (units > MAX_CREATE_BOOKING_OCCUPANCY_UNITS) {
+          throw new BadRequestException(
+            `occupancyUnits must be at most ${MAX_CREATE_BOOKING_OCCUPANCY_UNITS} per room line for self-service booking`,
           );
         }
         await this.assertRoomCapacityAvailable(
