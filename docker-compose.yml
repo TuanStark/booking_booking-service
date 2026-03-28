@@ -6,11 +6,16 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: booking-service
+    working_dir: /app
     ports:
       - "3005:3005"
     env_file:
       - .env
-    command: sh -c "npx prisma migrate deploy && node dist/main"
+    # Chạy migrate trước khi start (Prisma schema + migrations nằm trong image tại /app/prisma)
+    command:
+      - sh
+      - -c
+      - npx prisma migrate deploy && exec node dist/main
     networks:
       my_custom_network:
         ipv4_address: ${APP_IP}
@@ -20,7 +25,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 90s
     deploy:
       resources:
         limits:

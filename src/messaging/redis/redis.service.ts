@@ -10,7 +10,8 @@ export class RedisService {
 
   async get<T>(key: string): Promise<T | undefined> {
     try {
-      return await this.cacheManager.get<T>(key);
+      const v = await this.cacheManager.get<T>(key);
+      return v === null ? undefined : v;
     } catch (error) {
       this.logger.error(`Failed to get cache for key ${key}: ${error.message}`);
       return undefined;

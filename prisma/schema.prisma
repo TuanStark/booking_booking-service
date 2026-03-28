@@ -35,12 +35,14 @@ model Booking {
 }
 
 model BookingDetail {
-  id          String   @id @default(uuid())
-  bookingId   String
-  roomId      String
-  price       Float
-  note        String?  // optional: ghi chú hoặc yêu cầu thêm
-  createdAt   DateTime @default(now())
+  id              String   @id @default(uuid())
+  bookingId       String
+  roomId          String
+  price           Float
+  /** Số chỗ/người mà dòng đặt này chiếm (KTX nhiều người; mặc định 1) */
+  occupancyUnits  Int      @default(1)
+  note            String?  // optional: ghi chú hoặc yêu cầu thêm
+  createdAt       DateTime @default(now())
 
   booking     Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   @@index([bookingId])

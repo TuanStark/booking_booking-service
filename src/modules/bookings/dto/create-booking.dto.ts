@@ -7,6 +7,8 @@ import {
   IsOptional,
   IsString,
   IsIn,
+  Min,
+  Max,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -17,6 +19,14 @@ class BookingDetailItem {
   @IsNumber()
   @IsOptional()
   price?: number;
+
+  /** Số chỗ đặt (sinh viên = 1; đặt cặp có thể = 2). Backend chặn theo capacity phòng. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(50)
+  occupancyUnits?: number;
 
   @IsOptional()
   @IsString()

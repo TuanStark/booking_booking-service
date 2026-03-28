@@ -68,4 +68,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=40s \
   CMD wget -qO- http://localhost:${PORT}/health || exit 1
 
 # Khởi động ứng dụng
+# Khởi động ứng dụng
 CMD ["node", "dist/main"]

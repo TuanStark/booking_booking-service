@@ -26,6 +26,17 @@ const RELIST_BEFORE_DAYS = 30;
 /** Days of priority renewal window for current tenant (30 - 7 = opens at day 23 before end) */
 const RENEWAL_PRIORITY_DAYS = 7;
 
+/**
+ * Trạng thái booking được coi là đang chiếm chỗ vật lý (đồng bộ với lịch FE).
+ * PENDING không tính — chưa thanh toán không giữ giường, tránh treo capacity.
+ */
+const CAPACITY_HOLD_STATUSES: BookingStatus[] = [
+  BookingStatus.CONFIRMED,
+  BookingStatus.ACTIVE,
+  BookingStatus.EXPIRING_SOON,
+  BookingStatus.QUEUED,
+];
+
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 @Injectable()
@@ -79,7 +90,7 @@ export class BookingService {
         { useCache: false },
       );
 
-      // --- Check overlap for each room ---
+      // --- Capacity: còn đủ chỗ trên toàn bộ kỳ thuê (KTX nhiều người) ---
       for (const detail of dto.details) {
         const realRoom = roomsMap.get(detail.roomId);
         if (!realRoom) {
@@ -87,8 +98,23 @@ export class BookingService {
             `Room with ID ${detail.roomId} not found`,
           );
         }
-
-        await this.validateNoOverlap(detail.roomId, startDate, endDate);
+        const roomCapacity = this.normalizeRoomCapacity(realRoom.capacity);
+        const units = this.normalizeDetailOccupancyUnits(
+          detail.occupancyUnits,
+          roomCapacity,
+        );
+        if (units > roomCapacity) {
+          throw new BadRequestException(
+            `occupancyUnits (${units}) exceeds room capacity (${roomCapacity}) for room ${detail.roomId}`,
+          );
+        }
+        await this.assertRoomCapacityAvailable(
+          detail.roomId,
+          roomCapacity,
+          startDate,
+          endDate,
+          units,
+        );
       }
 
       // --- Determine if this is a pre-booking (room has EXPIRING_SOON lease) ---
@@ -97,10 +123,16 @@ export class BookingService {
       // --- Build booking details ---
       const detailCreates = dto.details.map((detail) => {
         const realRoom = roomsMap.get(detail.roomId)!;
-        const price = Number(realRoom.price);
+        const roomCapacity = this.normalizeRoomCapacity(realRoom.capacity);
+        const units = this.normalizeDetailOccupancyUnits(
+          detail.occupancyUnits,
+          roomCapacity,
+        );
+        const monthlyUnitPrice = Number(realRoom.price);
         return {
           roomId: detail.roomId,
-          price,
+          price: monthlyUnitPrice * units,
+          occupancyUnits: units,
           note: detail.note,
         };
       });
@@ -150,6 +182,7 @@ export class BookingService {
         details: booking.details.map((d) => ({
           roomId: d.roomId,
           price: d.price,
+          occupancyUnits: d.occupancyUnits,
         })),
       });
 
@@ -249,13 +282,30 @@ export class BookingService {
       );
     }
 
-    // --- Check no overlap with OTHER bookings on same rooms ---
+    const roomIdsRenew = [...new Set(booking.details.map((d) => d.roomId))];
+    const roomsMapRenew = await this.externalService.getRoomsByIds(
+      roomIdsRenew,
+      token,
+      { useCache: false },
+    );
+
     for (const detail of booking.details) {
-      await this.validateNoOverlap(
+      const realRoom = roomsMapRenew.get(detail.roomId);
+      if (!realRoom) {
+        throw new BadRequestException(`Room ${detail.roomId} not found`);
+      }
+      const roomCapacity = this.normalizeRoomCapacity(realRoom.capacity);
+      const units = this.normalizeDetailOccupancyUnits(
+        detail.occupancyUnits,
+        roomCapacity,
+      );
+      await this.assertRoomCapacityAvailable(
         detail.roomId,
-        booking.endDate, // new period starts at current endDate
+        roomCapacity,
+        booking.endDate,
         newEndDate,
-        bookingId, // exclude this booking from overlap check
+        units,
+        { excludeBookingId: bookingId },
       );
     }
 
@@ -457,6 +507,7 @@ export class BookingService {
         details: booking.details.map((d) => ({
           roomId: d.roomId,
           price: d.price,
+          occupancyUnits: d.occupancyUnits,
         })),
       });
 
@@ -744,40 +795,102 @@ export class BookingService {
     return totalMonths;
   }
 
+  private normalizeRoomCapacity(raw: unknown): number {
+    const n = Math.floor(Number(raw));
+    if (!Number.isFinite(n) || n < 1) return 1;
+    return Math.min(n, 100);
+  }
+
+  private normalizeDetailOccupancyUnits(raw: unknown, roomCapacity: number): number {
+    const n = Math.floor(Number(raw ?? 1));
+    if (!Number.isFinite(n) || n < 1) return 1;
+    return Math.min(n, roomCapacity);
+  }
+
+  /** Mỗi ngày lịch (local) từ from → to, inclusive theo phần date. */
+  private listInclusiveCalendarDays(from: Date, to: Date): Date[] {
+    const s = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+    const e = new Date(to.getFullYear(), to.getMonth(), to.getDate());
+    const out: Date[] = [];
+    const cur = new Date(s);
+    while (cur <= e) {
+      out.push(new Date(cur));
+      cur.setDate(cur.getDate() + 1);
+    }
+    return out;
+  }
+
+  private dayTouchesBooking(day: Date, bStart: Date, bEnd: Date): boolean {
+    const d0 = new Date(
+      day.getFullYear(),
+      day.getMonth(),
+      day.getDate(),
+      0,
+      0,
+      0,
+      0,
+    ).getTime();
+    const d1 = new Date(
+      day.getFullYear(),
+      day.getMonth(),
+      day.getDate(),
+      23,
+      59,
+      59,
+      999,
+    ).getTime();
+    const bs = bStart.getTime();
+    const be = bEnd.getTime();
+    return !(d1 < bs || d0 > be);
+  }
+
+  private sumOccupancyForRoomOnBooking(
+    booking: { details: { occupancyUnits: number }[] },
+  ): number {
+    return booking.details.reduce((acc, d) => acc + (d.occupancyUnits ?? 1), 0);
+  }
+
   /**
-   * Validate that no active/confirmed booking overlaps with the requested date range.
-   * @param excludeBookingId - Optionally exclude a booking (used in renewals)
+   * Đủ capacity trên mọi ngày trong [windowStart, windowEnd] (inclusive calendar days).
+   * @param additionalUnits — chỗ cần thêm mỗi ngày (đặt mới hoặc gia hạn cùng tenant).
+   * @param excludeBookingId — khi gia hạn: bỏ booking hiện tại khỏi tổng đang giữ chỗ.
    */
-  private async validateNoOverlap(
+  private async assertRoomCapacityAvailable(
     roomId: string,
-    startDate: Date,
-    endDate: Date,
-    excludeBookingId?: string,
+    roomCapacity: number,
+    windowStart: Date,
+    windowEnd: Date,
+    additionalUnits: number,
+    opts?: { excludeBookingId?: string },
   ): Promise<void> {
-    const overlapping = await this.prisma.booking.findFirst({
+    const cap = Math.max(1, roomCapacity);
+    const bookings = await this.prisma.booking.findMany({
       where: {
-        ...(excludeBookingId && { id: { not: excludeBookingId } }),
-        status: {
-          in: [
-            BookingStatus.CONFIRMED,
-            BookingStatus.ACTIVE,
-            BookingStatus.EXPIRING_SOON,
-          ],
-        },
-        details: {
-          some: { roomId },
-        },
-        // Overlap condition: booking A overlaps B if A.start < B.end AND A.end > B.start
-        startDate: { lt: endDate },
-        endDate: { gt: startDate },
+        status: { in: CAPACITY_HOLD_STATUSES },
+        ...(opts?.excludeBookingId
+          ? { id: { not: opts.excludeBookingId } }
+          : {}),
+        details: { some: { roomId } },
+        startDate: { lt: windowEnd },
+        endDate: { gt: windowStart },
       },
-      select: { id: true, startDate: true, endDate: true },
+      include: { details: { where: { roomId } } },
     });
 
-    if (overlapping) {
-      throw new BadRequestException(
-        `Room ${roomId} is already booked from ${overlapping.startDate.toISOString()} to ${overlapping.endDate.toISOString()}`,
-      );
+    const days = this.listInclusiveCalendarDays(windowStart, windowEnd);
+    for (const day of days) {
+      let used = 0;
+      for (const b of bookings) {
+        if (this.dayTouchesBooking(day, b.startDate, b.endDate)) {
+          used += this.sumOccupancyForRoomOnBooking(b);
+        }
+      }
+      if (used + additionalUnits > cap) {
+        throw new BadRequestException(
+          `Room ${roomId} has insufficient capacity on ${day.toISOString().slice(0, 10)}: ` +
+            `used=${used}, requested additional=${additionalUnits}, capacity=${cap}`,
+        );
+      }
     }
   }
 
