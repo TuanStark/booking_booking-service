@@ -578,7 +578,7 @@ export class BookingService {
       orderBy: { createdAt: 'desc' },
     });
 
-    return this.enrichBookingsWithExternalData(bookings, token);
+    return bookings;
   }
 
   async delete(id: string) {
