@@ -39,4 +39,12 @@ export class FindAllDto {
 
   @IsOptional()
   upcoming?: boolean;
+
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @IsOptional()
+  @IsString()
+  paymentStatus?: string;
 }
