@@ -657,6 +657,32 @@ export class BookingService {
     return bookings;
   }
 
+  async getCalendarBookings(
+    roomIds: string[],
+    startDate: string,
+    endDate: string,
+    token?: string,
+  ) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    const bookings = await this.prisma.booking.findMany({
+      where: {
+        details: { some: { roomId: { in: roomIds } } },
+        status: {
+          in: CAPACITY_HOLD_STATUSES,
+        },
+        // Mệnh đề kiểm tra overlap thời gian: (B.startDate <= param.endDate AND B.endDate >= param.startDate)
+        startDate: { lte: end },
+        endDate: { gte: start },
+      },
+      include: { details: true },
+      orderBy: { startDate: 'asc' },
+    });
+
+    return await this.enrichBookingsWithExternalData(bookings, token);
+  }
+
   async delete(id: string) {
     try {
       const booking = await this.prisma.booking.delete({

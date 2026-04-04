@@ -158,6 +158,33 @@ export class BookingController {
     }
   }
 
+  @Get('calendar-filter')
+  async getCalendarBookings(
+    @Query('roomIds') roomIds: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Req() req: Request,
+  ) {
+    try {
+      if (!roomIds || !startDate || !endDate) {
+        throw new BadRequestException('roomIds, startDate, and endDate are required');
+      }
+      
+      const token = this.extractToken(req);
+      const roomIdArray = roomIds.split(',');
+      const bookings = await this.bookingsService.getCalendarBookings(
+        roomIdArray,
+        startDate,
+        endDate,
+        token
+      );
+      
+      return new ResponseData(bookings, HttpStatus.SUCCESS, HttpMessage.SUCCESS);
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string, @Req() req: Request) {
     try {
