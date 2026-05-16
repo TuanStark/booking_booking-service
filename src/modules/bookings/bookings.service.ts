@@ -14,6 +14,7 @@ import { RabbitMQProducerService } from '../../messaging/rabbitmq/rabbitmq.produ
 import { RedisService } from '../../messaging/redis/redis.service';
 import { ExternalService } from '../../common/external/external.service';
 import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -31,6 +32,18 @@ const RENEWAL_PRIORITY_DAYS = 7;
  * PENDING không tính — chưa thanh toán không giữ giường, tránh treo capacity.
  */
 const CAPACITY_HOLD_STATUSES: BookingStatus[] = [
+  BookingStatus.CONFIRMED,
+  BookingStatus.ACTIVE,
+  BookingStatus.EXPIRING_SOON,
+  BookingStatus.QUEUED,
+];
+
+/**
+ * Một user không được có hai booking chồng kỳ trong cùng một building.
+ * Gồm cả PENDING để tránh nhiều phiên thanh toán song song cho cùng tòa.
+ */
+const USER_EXCLUSIVE_BOOKING_PER_BUILDING_STATUSES: BookingStatus[] = [
+  BookingStatus.PENDING,
   BookingStatus.CONFIRMED,
   BookingStatus.ACTIVE,
   BookingStatus.EXPIRING_SOON,
@@ -128,7 +141,7 @@ export class BookingService {
       // --- Determine if this is a pre-booking (room has EXPIRING_SOON lease) ---
       const isPreBooking = await this.isPreBookingEligible(roomIds, startDate);
 
-      // --- Build booking details ---
+      // --- Build booking details (snapshot buildingId for enforce per-building rule) ---
       const detailCreates = dto.details.map((detail) => {
         const realRoom = roomsMap.get(detail.roomId)!;
         const roomCapacity = this.normalizeRoomCapacity(realRoom.capacity);
@@ -139,11 +152,16 @@ export class BookingService {
         const monthlyUnitPrice = Number(realRoom.price);
         return {
           roomId: detail.roomId,
+          buildingId: this.extractBuildingId(realRoom, detail.roomId),
           price: monthlyUnitPrice * units,
           occupancyUnits: units,
           note: detail.note,
         };
       });
+
+      this.assertAtMostOneRoomPerBuildingInRequest(
+        detailCreates.map((d) => d.buildingId),
+      );
 
       // --- Calculate total (price × durationMonths for deposit) ---
       let totalAmount = 0;
@@ -155,23 +173,41 @@ export class BookingService {
         throw new BadRequestException('Total amount must be greater than 0');
       }
 
-      // --- Create booking record ---
+      // --- Create booking record (transaction + lock: one booking per user per building per period) ---
       const bookingStatus = isPreBooking
         ? BookingStatus.QUEUED
         : BookingStatus.PENDING;
 
-      const booking = await this.prisma.booking.create({
-        data: {
+      const booking = await this.prisma.$transaction(async (tx) => {
+        const distinctBuildingIds = [
+          ...new Set(detailCreates.map((d) => d.buildingId)),
+        ].sort();
+        await this.acquireAdvisoryLocksForUserBuildings(
+          tx,
           userId,
+          distinctBuildingIds,
+        );
+        await this.assertNoUserBookingOverlapInBuildings(
+          tx,
+          userId,
+          distinctBuildingIds,
           startDate,
           endDate,
-          durationMonths,
-          status: bookingStatus,
-          details: {
-            create: detailCreates,
+        );
+
+        return tx.booking.create({
+          data: {
+            userId,
+            startDate,
+            endDate,
+            durationMonths,
+            status: bookingStatus,
+            details: {
+              create: detailCreates,
+            },
           },
-        },
-        include: { details: true },
+          include: { details: true },
+        });
       });
 
       this.logger.log(
@@ -187,8 +223,9 @@ export class BookingService {
         endDate: booking.endDate,
         durationMonths: booking.durationMonths,
         isPreBooking,
-        details: booking.details.map((d) => ({
+        details: detailCreates.map((d) => ({
           roomId: d.roomId,
+          buildingId: d.buildingId,
           price: d.price,
           occupancyUnits: d.occupancyUnits,
         })),
@@ -901,6 +938,80 @@ export class BookingService {
     return booking.details.reduce((acc, d) => acc + (d.occupancyUnits ?? 1), 0);
   }
 
+  private extractBuildingId(room: Record<string, unknown>, roomId: string): string {
+    const direct = room.buildingId;
+    const nested = (room.building as Record<string, unknown> | undefined)?.id;
+    const raw = direct ?? nested;
+    if (raw == null || String(raw).trim() === '') {
+      throw new BadRequestException(
+        `Room ${roomId} is missing building information; cannot create booking`,
+      );
+    }
+    return String(raw);
+  }
+
+  private assertAtMostOneRoomPerBuildingInRequest(buildingIds: string[]): void {
+    const seen = new Set<string>();
+    for (const bid of buildingIds) {
+      if (seen.has(bid)) {
+        throw new BadRequestException(
+          'Cannot book more than one room in the same building in a single request',
+        );
+      }
+      seen.add(bid);
+    }
+  }
+
+  private async acquireAdvisoryLocksForUserBuildings(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    buildingIds: string[],
+  ): Promise<void> {
+    const sorted = [...new Set(buildingIds)].sort();
+    for (const bid of sorted) {
+      await tx.$executeRawUnsafe(
+        'SELECT pg_advisory_xact_lock(hashtext($1::text), hashtext($2::text))',
+        userId,
+        bid,
+      );
+    }
+  }
+
+  private async assertNoUserBookingOverlapInBuildings(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    buildingIds: string[],
+    windowStart: Date,
+    windowEnd: Date,
+  ): Promise<void> {
+    if (buildingIds.length === 0) {
+      return;
+    }
+
+    const whereClause = {
+      buildingId: { in: buildingIds },
+      booking: {
+        is: {
+          userId,
+          status: { in: USER_EXCLUSIVE_BOOKING_PER_BUILDING_STATUSES },
+          startDate: { lt: windowEnd },
+          endDate: { gt: windowStart },
+        },
+      },
+    } as unknown as Prisma.BookingDetailWhereInput;
+
+    const conflict = await tx.bookingDetail.findFirst({
+      where: whereClause,
+      select: { id: true },
+    });
+
+    if (conflict) {
+      throw new BadRequestException(
+        'You already have a booking that overlaps this period in the same building. Only one booking per building is allowed at a time.',
+      );
+    }
+  }
+
   /**
    * Đủ capacity trên mọi ngày trong [windowStart, windowEnd] (inclusive calendar days).
    * @param additionalUnits — chỗ cần thêm mỗi ngày (đặt mới hoặc gia hạn cùng tenant).
@@ -912,10 +1023,11 @@ export class BookingService {
     windowStart: Date,
     windowEnd: Date,
     additionalUnits: number,
-    opts?: { excludeBookingId?: string },
+    opts?: { excludeBookingId?: string; tx?: Prisma.TransactionClient },
   ): Promise<void> {
+    const db = opts?.tx ?? this.prisma;
     const cap = Math.max(1, roomCapacity);
-    const bookings = await this.prisma.booking.findMany({
+    const bookings = await db.booking.findMany({
       where: {
         status: { in: CAPACITY_HOLD_STATUSES },
         ...(opts?.excludeBookingId
